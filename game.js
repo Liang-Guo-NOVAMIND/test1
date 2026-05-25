@@ -125,7 +125,7 @@ function generateHomePositions() {
 // Start positions on main track for each player
 const PLAYER_START_CELLS = [0, 13, 26, 39];
 // Entry to finish lane (the cell before branching into finish)
-const PLAYER_FINISH_ENTRY = [50, 11, 24, 37];
+const PLAYER_FINISH_ENTRY = [51, 12, 25, 38];
 
 const trackPositions = generateTrackPositions();
 const finishPositions = generateFinishPositions();
@@ -337,8 +337,6 @@ function getMovablePieces(player, diceValue) {
         } else if (piece.state === 'finish') {
             const newFinishPos = piece.finishPos + diceValue;
             if (newFinishPos < FINISH_LANE_LENGTH) {
-                movable.push(idx);
-            } else if (newFinishPos === FINISH_LANE_LENGTH - 1) {
                 movable.push(idx);
             }
         }
