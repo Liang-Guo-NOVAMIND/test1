@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flying Chess - Integration Tests</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            color: #333;
+        }
+        h1 { margin-bottom: 5px; }
+        .subtitle { color: #666; margin-bottom: 20px; }
+        .summary {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .summary.all-pass { background: #c8e6c9; color: #2e7d32; }
+        .summary.has-fail { background: #ffcdd2; color: #c62828; }
+        .section { margin-bottom: 25px; }
+        .section h2 {
+            font-size: 16px;
+            padding: 8px 12px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        .test-row {
+            display: flex;
+            align-items: center;
+            padding: 6px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+        .test-row:last-child { border-bottom: none; }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 10px;
+            min-width: 40px;
+            text-align: center;
+        }
+        .badge.pass { background: #43a047; color: #fff; }
+        .badge.fail { background: #e53935; color: #fff; }
+        .badge.skip { background: #ff9800; color: #fff; }
+        .detail { color: #999; margin-left: 8px; font-size: 12px; }
+
+        #game-wrapper {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+        }
+        #game-wrapper #board-container {
+            position: relative;
+            width: 600px;
+            height: 600px;
+        }
+        .cell {
+            position: absolute;
+            width: 36px;
+            height: 36px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fafafa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #999;
+        }
+        .cell.finish { background: #ffe0b2; border-color: #ff9800; }
+        .cell.home-red { background: #ffcccc; border-color: #ff6666; }
+        .cell.home-blue { background: #ccddff; border-color: #6699ff; }
+        .cell.home-green { background: #ccffcc; border-color: #66cc66; }
+        .cell.home-yellow { background: #ffffcc; border-color: #cccc00; }
+        .piece {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid rgba(0,0,0,0.3);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: #fff;
+            z-index: 10;
+        }
+        .piece.red { background: #e53935; }
+        .piece.blue { background: #1e88e5; }
+        .piece.green { background: #43a047; }
+        .piece.yellow { background: #fdd835; color: #333; }
+        .piece.disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .manual-section {
+            background: #fff;
+            padding: 15px 20px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            margin-top: 20px;
+        }
+        .manual-section h2 { background: none; padding: 0; margin-bottom: 10px; }
+        .manual-section ol { padding-left: 20px; }
+        .manual-section li { margin-bottom: 6px; line-height: 1.5; }
+        .manual-section code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>Flying Chess Integration Test Suite</h1>
+    <p class="subtitle">Automated tests for game logic, rendering, and browser compatibility</p>
+
+    <div id="summary"></div>
+    <div id="test-output"></div>
+
+    <!-- Hidden game container (offscreen but rendered for DOM measurements) -->
+    <div id="game-wrapper">
+        <div id="game-info"></div>
+        <div id="board-container"></div>
+        <div id="controls">
+            <button id="dice-btn">Roll</button>
+            <div id="dice-display">?</div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+    <script>
+    'use strict';
+
+    // ================================================================
+    // Minimal test framework
+    // ================================================================
+
+    const testResults = { passed: 0, failed: 0, skipped: 0, sections: [] };
+    let currentSection = null;
+
+    function section(name) {
+        currentSection = { name: name, tests: [] };
+        testResults.sections.push(currentSection);
+    }
+
+    function assert(condition, name, detail) {
+        var status;
+        if (condition) {
+            testResults.passed++;
+            status = 'pass';
+        } else {
+            testResults.failed++;
+            status = 'fail';
+        }
+        currentSection.tests.push({ name: name, status: status, detail: detail || '' });
+    }
+
+    function assertEqual(actual, expected, name) {
+        var ok = actual === expected;
+        assert(ok, name, ok ? '' : 'expected ' + expected + ', got ' + actual);
+    }
+
+    function assertRange(val, min, max, name) {
+        var ok = val >= min && val <= max;
+        assert(ok, name, ok ? '' : val + ' not in [' + min + ',' + max + ']');
+    }
+
+    function skip(name, reason) {
+        testResults.skipped++;
+        currentSection.tests.push({ name: name, status: 'skip', detail: reason });
+    }
+
+    // Helper: reset game to initial state
+    function resetForTest() {
+        initGameState();
+        createBoard();
+        updateUI();
+    }
+
+    // ================================================================
+    // 1. Browser Compatibility
+    // ================================================================
+    section('Browser Compatibility');
+
+    assert(typeof requestAnimationFrame === 'function',
+        'requestAnimationFrame available');
+    assert(typeof performance !== 'undefined' && typeof performance.now === 'function',
+        'performance.now available');
+    assert(typeof document.createElement === 'function',
+        'document.createElement available');
+    assert(typeof document.getElementById === 'function',
+        'document.getElementById available');
+    assert(typeof document.querySelector === 'function',
+        'document.querySelector available');
+    assert(typeof Array.prototype.forEach === 'function',
+        'Array.prototype.forEach available');
+    assert(typeof Array.prototype.filter === 'function',
+        'Array.prototype.filter available');
+    assert(typeof Array.prototype.findIndex === 'function',
+        'Array.prototype.findIndex available');
+    assert(typeof Array.prototype.every === 'function',
+        'Array.prototype.every available');
+    assert(typeof Array.prototype.includes === 'function',
+        'Array.prototype.includes available');
+    assert(typeof Math.pow === 'function',
+        'Math.pow available');
+
+    (function() {
+        var el = document.createElement('div');
+        assert('classList' in el, 'Element.classList supported');
+        assert('dataset' in el, 'Element.dataset supported');
+        assert('textContent' in el, 'Element.textContent supported');
+        assert('style' in el, 'Element.style supported');
+        assert('addEventListener' in el, 'Element.addEventListener supported');
+    })();
+
+    (function() {
+        try {
+            var arrowTest = new Function('return (() => true)()');
+            assert(arrowTest(), 'Arrow functions supported');
+        } catch (e) {
+            assert(false, 'Arrow functions supported', e.message);
+        }
+    })();
+
+    (function() {
+        try {
+            new Function('"use strict"; const x = 1; let y = 2;');
+            assert(true, 'const/let supported');
+        } catch (e) {
+            assert(false, 'const/let supported', e.message);
+        }
+    })();
+
+    (function() {
+        try {
+            new Function('var x = 1; return `${x}`');
+            assert(true, 'Template literals supported');
+        } catch (e) {
+            assert(false, 'Template literals supported', e.message);
+        }
+    })();
+
+    assert(typeof CSS !== 'undefined' || document.body.style.display !== undefined,
+        'CSS styling available');
+
+    // ================================================================
+    // 2. Board Layout
+    // ================================================================
+    section('Board Layout');
+
+    assertEqual(trackPositions.length, TRACK_LENGTH,
+        'Track has ' + TRACK_LENGTH + ' positions');
+
+    (function() {
+        var allValid = trackPositions.every(function(p) {
+            return p.x >= 0 && p.x <= 600 && p.y >= 0 && p.y <= 600;
+        });
+        assert(allValid, 'All track positions within 600x600 board');
+    })();
+
+    assertEqual(finishPositions.length, PLAYERS.length,
+        'Finish lanes exist for all ' + PLAYERS.length + ' players');
+
+    (function() {
+        var allCorrectLength = finishPositions.every(function(lane) {
+            return lane.length === FINISH_LANE_LENGTH;
+        });
+        assert(allCorrectLength, 'Each finish lane has ' + FINISH_LANE_LENGTH + ' positions');
+    })();
+
+    assertEqual(homePositions.length, PLAYERS.length,
+        'Home bases exist for all ' + PLAYERS.length + ' players');
+
+    (function() {
+        var allFour = homePositions.every(function(homes) {
+            return homes.length === PIECES_PER_PLAYER;
+        });
+        assert(allFour, 'Each home base has ' + PIECES_PER_PLAYER + ' positions');
+    })();
+
+    assertEqual(PLAYER_START_CELLS.length, PLAYERS.length,
+        'Start cells defined for all players');
+
+    assertEqual(PLAYER_FINISH_ENTRY.length, PLAYERS.length,
+        'Finish entry cells defined for all players');
+
+    (function() {
+        var allInRange = PLAYER_START_CELLS.every(function(c) {
+            return c >= 0 && c < TRACK_LENGTH;
+        });
+        assert(allInRange, 'Start cells within track range [0,' + (TRACK_LENGTH - 1) + ']');
+    })();
+
+    (function() {
+        var allInRange = PLAYER_FINISH_ENTRY.every(function(c) {
+            return c >= 0 && c < TRACK_LENGTH;
+        });
+        assert(allInRange, 'Finish entry cells within track range');
+    })();
+
+    // Verify track forms a closed loop (first and last cells are adjacent)
+    (function() {
+        var first = trackPositions[0];
+        var last = trackPositions[TRACK_LENGTH - 1];
+        var dx = Math.abs(first.x - last.x);
+        var dy = Math.abs(first.y - last.y);
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        assert(dist < 80, 'Track forms closed loop (first-last distance: ' + dist.toFixed(1) + 'px)',
+            dist >= 80 ? 'distance too large: ' + dist.toFixed(1) : '');
+    })();
+
+    // Verify track cells are evenly spaced (no gaps)
+    (function() {
+        var maxGap = 0;
+        for (var i = 1; i < trackPositions.length; i++) {
+            var dx = trackPositions[i].x - trackPositions[i - 1].x;
+            var dy = trackPositions[i].y - trackPositions[i - 1].y;
+            var d = Math.sqrt(dx * dx + dy * dy);
+            if (d > maxGap) maxGap = d;
+        }
+        assert(maxGap < 50, 'Track cells evenly spaced (max gap: ' + maxGap.toFixed(1) + 'px)');
+    })();
+
+    // Verify finish lanes point toward center
+    (function() {
+        var center = 300;
+        var allTowardCenter = finishPositions.every(function(lane) {
+            var first = lane[0];
+            var last = lane[lane.length - 1];
+            var distFirst = Math.sqrt(Math.pow(first.x - center, 2) + Math.pow(first.y - center, 2));
+            var distLast = Math.sqrt(Math.pow(last.x - center, 2) + Math.pow(last.y - center, 2));
+            return distLast < distFirst;
+        });
+        assert(allTowardCenter, 'Finish lanes converge toward board center');
+    })();
+
+    // ================================================================
+    // 3. Game State Initialization
+    // ================================================================
+    section('Game State Initialization');
+    resetForTest();
+
+    assertEqual(STATE.pieces.length, PLAYERS.length * PIECES_PER_PLAYER,
+        'Correct total piece count (' + (PLAYERS.length * PIECES_PER_PLAYER) + ')');
+
+    (function() {
+        var allHome = STATE.pieces.every(function(p) { return p.state === 'home'; });
+        assert(allHome, 'All pieces start in home state');
+    })();
+
+    (function() {
+        var allNegTrack = STATE.pieces.every(function(p) { return p.trackPos === -1; });
+        assert(allNegTrack, 'All pieces start with trackPos = -1');
+    })();
+
+    (function() {
+        var allNegFinish = STATE.pieces.every(function(p) { return p.finishPos === -1; });
+        assert(allNegFinish, 'All pieces start with finishPos = -1');
+    })();
+
+    assertEqual(STATE.currentPlayer, 0, 'Red (player 0) starts first');
+    assertEqual(STATE.diceValue, null, 'No dice value at start');
+    assertEqual(STATE.isAnimating, false, 'Not animating at start');
+
+    (function() {
+        for (var p = 0; p < PLAYERS.length; p++) {
+            var count = STATE.pieces.filter(function(piece) { return piece.player === p; }).length;
+            assert(count === PIECES_PER_PLAYER,
+                PLAYER_NAMES[p] + ' has ' + PIECES_PER_PLAYER + ' pieces',
+                count !== PIECES_PER_PLAYER ? 'has ' + count : '');
+        }
+    })();
+
+    // ================================================================
+    // 4. Dice Rolling
+    // ================================================================
+    section('Dice Rolling');
+
+    (function() {
+        var distribution = [0, 0, 0, 0, 0, 0];
+        var total = 6000;
+        for (var i = 0; i < total; i++) {
+            var v = rollDice();
+            if (v >= 1 && v <= 6) distribution[v - 1]++;
+        }
+        var allInRange = distribution.every(function(c) { return c > 0; });
+        assert(allInRange, 'rollDice returns all values 1-6 (n=' + total + ')');
+
+        // Chi-squared test for uniform distribution (expect ~1000 each)
+        var expected = total / 6;
+        var chi2 = distribution.reduce(function(sum, obs) {
+            return sum + Math.pow(obs - expected, 2) / expected;
+        }, 0);
+        // df=5, p=0.01 critical value = 15.09
+        assert(chi2 < 15.09, 'Dice distribution roughly uniform (chi2=' + chi2.toFixed(2) + ')');
+    })();
+
+    // ================================================================
+    // 5. Move Logic - canMoveFromHome
+    // ================================================================
+    section('Move Logic - Home Exit');
+
+    for (var d = 1; d <= 6; d++) {
+        if (d === 6) {
+            assert(canMoveFromHome(d), 'canMoveFromHome(6) = true');
+        } else {
+            assert(!canMoveFromHome(d), 'canMoveFromHome(' + d + ') = false');
+        }
+    }
+
+    // ================================================================
+    // 6. Position Conversion
+    // ================================================================
+    section('Position Conversion');
+
+    // Red (start=0): absolute 5 => relative 5
+    assertEqual(getPlayerTrackPos(0, 5), 5, 'Red: abs 5 => rel 5');
+    // Blue (start=13): absolute 15 => relative 2
+    assertEqual(getPlayerTrackPos(1, 15), 2, 'Blue: abs 15 => rel 2');
+    // Green (start=26): absolute 30 => relative 4
+    assertEqual(getPlayerTrackPos(2, 30), 4, 'Green: abs 30 => rel 4');
+    // Yellow (start=39): absolute 0 => relative 13
+    assertEqual(getPlayerTrackPos(3, 0), 13, 'Yellow: abs 0 => rel 13');
+    // Wrap-around: Red abs 51 => rel 51
+    assertEqual(getPlayerTrackPos(0, 51), 51, 'Red: abs 51 => rel 51');
+    // Wrap-around: Blue abs 10 => rel 49 (10-13+52)
+    assertEqual(getPlayerTrackPos(1, 10), 49, 'Blue: abs 10 => rel 49 (wrap)');
+
+    // absoluteFromRelative
+    assertEqual(absoluteFromRelative(0, 5), 5, 'Red: rel 5 => abs 5');
+    assertEqual(absoluteFromRelative(1, 2), 15, 'Blue: rel 2 => abs 15');
+    assertEqual(absoluteFromRelative(2, 30), 4, 'Green: rel 30 => abs 4 (wrap)');
+    assertEqual(absoluteFromRelative(3, 20), 7, 'Yellow: rel 20 => abs 7 (wrap)');
+
+    // Round-trip consistency
+    (function() {
+        var consistent = true;
+        for (var p = 0; p < PLAYERS.length; p++) {
+            for (var abs = 0; abs < TRACK_LENGTH; abs++) {
+                var rel = getPlayerTrackPos(p, abs);
+                var backToAbs = absoluteFromRelative(p, rel);
+                if (backToAbs !== abs) {
+                    consistent = false;
+                    break;
+                }
+            }
+        }
+        assert(consistent, 'Round-trip abs->rel->abs consistent for all positions');
+    })();
+
+    // ================================================================
+    // 7. Move Logic - getMovablePieces
+    // ================================================================
+    section('Move Logic - Movable Pieces');
+
+    // All pieces at home, dice != 6 => no movable pieces
+    resetForTest();
+    (function() {
+        for (var d = 1; d <= 5; d++) {
+            var m = getMovablePieces(0, d);
+            assertEqual(m.length, 0, 'All home + dice ' + d + ' => 0 movable');
+        }
+    })();
+
+    // All pieces at home, dice = 6 => all 4 movable
+    (function() {
+        var m = getMovablePieces(0, 6);
+        assertEqual(m.length, 4, 'All home + dice 6 => 4 movable');
+    })();
+
+    // One piece on track, rest at home
+    resetForTest();
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 5;
+    (function() {
+        var m = getMovablePieces(0, 3);
+        assertEqual(m.length, 1, 'One on track + dice 3 => 1 movable');
+        assertEqual(m[0], 0, 'Correct piece index returned');
+    })();
+
+    // Piece on track + dice 6 => track piece + all home pieces
+    (function() {
+        var m = getMovablePieces(0, 6);
+        assertEqual(m.length, 4, 'Track piece + 3 home + dice 6 => 4 movable');
+    })();
+
+    // Piece near finish entry - can enter finish lane
+    resetForTest();
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 49; // Red rel 49, needs 3 more to finish entry (51)
+    (function() {
+        var m = getMovablePieces(0, 4); // newRel=53, finishSteps=2
+        assert(m.includes(0), 'Piece near finish can enter finish lane (dice 4)');
+    })();
+
+    // Piece would overshoot finish lane
+    resetForTest();
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 49;
+    (function() {
+        // newRel = 49+6 = 55, finishSteps = 55-51 = 4, <= 6, still ok
+        var m1 = getMovablePieces(0, 6);
+        assert(m1.includes(0), 'Piece at rel 49 + dice 6 can enter finish (finishSteps=4)');
+    })();
+
+    // Piece in finish lane - can move forward
+    resetForTest();
+    STATE.pieces[0].state = 'finish';
+    STATE.pieces[0].finishPos = 2;
+    (function() {
+        var m = getMovablePieces(0, 2); // newFinishPos=4, < 6
+        assert(m.includes(0), 'Finish lane piece can advance (pos 2 + dice 2)');
+    })();
+
+    // Piece in finish lane - would overshoot
+    (function() {
+        var m = getMovablePieces(0, 4); // newFinishPos=6, not < 6
+        assert(!m.includes(0), 'Finish lane piece cannot overshoot (pos 2 + dice 4)');
+    })();
+
+    // Piece in finish lane - exact finish
+    resetForTest();
+    STATE.pieces[0].state = 'finish';
+    STATE.pieces[0].finishPos = 4;
+    (function() {
+        var m = getMovablePieces(0, 1); // newFinishPos=5, < 6
+        assert(m.includes(0), 'Finish lane piece can reach last pos (pos 4 + dice 1)');
+    })();
+
+    // Finished pieces are not movable
+    resetForTest();
+    STATE.pieces[0].state = 'finished';
+    (function() {
+        var m = getMovablePieces(0, 6);
+        assert(!m.includes(0), 'Finished piece is not movable');
+        assertEqual(m.length, 3, 'Only 3 home pieces movable with dice 6');
+    })();
+
+    // ================================================================
+    // 8. Track Path Building
+    // ================================================================
+    section('Track Path Building');
+
+    // Simple forward path
+    (function() {
+        var path = buildTrackPath(5, 8, 0);
+        assertEqual(path.length, 3, 'buildTrackPath(5,8): 3 steps');
+        assert(path[0] === trackPositions[6], 'Path[0] is position 6');
+        assert(path[2] === trackPositions[8], 'Path[2] is position 8');
+    })();
+
+    // Wrap-around path
+    (function() {
+        var path = buildTrackPath(50, 2, 0);
+        assertEqual(path.length, 4, 'buildTrackPath(50,2) wraps: 4 steps');
+        assert(path[0] === trackPositions[51], 'Wrap path[0] is position 51');
+        assert(path[1] === trackPositions[0], 'Wrap path[1] is position 0');
+        assert(path[3] === trackPositions[2], 'Wrap path[3] is position 2');
+    })();
+
+    // Same position (no movement)
+    (function() {
+        var path = buildTrackPath(10, 10, 0);
+        assertEqual(path.length, 0, 'buildTrackPath(10,10): empty path');
+    })();
+
+    // Full lap
+    (function() {
+        var path = buildTrackPath(0, 51, 0);
+        assertEqual(path.length, 51, 'buildTrackPath(0,51): 51 steps');
+    })();
+
+    // ================================================================
+    // 9. Piece Finding
+    // ================================================================
+    section('Piece Collision Detection');
+
+    resetForTest();
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 10;
+    STATE.pieces[4].state = 'track'; // Blue piece 0
+    STATE.pieces[4].trackPos = 10;
+
+    (function() {
+        var found = findPieceAtTrackPos(10, 0);
+        assertEqual(found, 4, 'findPieceAtTrackPos finds Blue piece at pos 10');
+    })();
+
+    (function() {
+        var found = findPieceAtTrackPos(10, 4);
+        assertEqual(found, 0, 'findPieceAtTrackPos finds Red piece (exclude Blue)');
+    })();
+
+    (function() {
+        var found = findPieceAtTrackPos(11, 0);
+        assertEqual(found, -1, 'findPieceAtTrackPos returns -1 for empty position');
+    })();
+
+    // Home pieces are not found on track
+    (function() {
+        var found = findPieceAtTrackPos(0, -1);
+        assertEqual(found, -1, 'Home pieces not found on track');
+    })();
+
+    // ================================================================
+    // 10. Win Detection
+    // ================================================================
+    section('Win Detection');
+
+    // No winner at start
+    resetForTest();
+    assertEqual(checkWinner(), -1, 'No winner at game start');
+
+    // Partial finish - no winner
+    STATE.pieces[0].state = 'finished';
+    STATE.pieces[1].state = 'finished';
+    assertEqual(checkWinner(), -1, 'No winner with only 2 of 4 pieces finished');
+
+    // All Red pieces finished
+    STATE.pieces[2].state = 'finished';
+    STATE.pieces[3].state = 'finished';
+    assertEqual(checkWinner(), 0, 'Red wins when all 4 pieces finished');
+
+    // Blue wins
+    resetForTest();
+    for (var i = 4; i < 8; i++) STATE.pieces[i].state = 'finished';
+    assertEqual(checkWinner(), 1, 'Blue wins when all 4 pieces finished');
+
+    // Green wins
+    resetForTest();
+    for (var i = 8; i < 12; i++) STATE.pieces[i].state = 'finished';
+    assertEqual(checkWinner(), 2, 'Green wins when all 4 pieces finished');
+
+    // Yellow wins
+    resetForTest();
+    for (var i = 12; i < 16; i++) STATE.pieces[i].state = 'finished';
+    assertEqual(checkWinner(), 3, 'Yellow wins when all 4 pieces finished');
+
+    // ================================================================
+    // 11. DOM Rendering
+    // ================================================================
+    section('DOM Rendering');
+    resetForTest();
+
+    (function() {
+        var container = document.getElementById('board-container');
+        assert(container !== null, 'Board container element exists');
+    })();
+
+    (function() {
+        var cells = document.querySelectorAll('#board-container .cell');
+        // Track cells (52) + finish cells (4*6=24) + home cells (4*4=16) = 92
+        assertEqual(cells.length, 92, 'Correct total cell count (52 track + 24 finish + 16 home)');
+    })();
+
+    (function() {
+        var pieces = document.querySelectorAll('#board-container .piece');
+        assertEqual(pieces.length, 16, '16 piece elements rendered');
+    })();
+
+    (function() {
+        var redPieces = document.querySelectorAll('#board-container .piece.red');
+        var bluePieces = document.querySelectorAll('#board-container .piece.blue');
+        var greenPieces = document.querySelectorAll('#board-container .piece.green');
+        var yellowPieces = document.querySelectorAll('#board-container .piece.yellow');
+        assertEqual(redPieces.length, 4, '4 red pieces');
+        assertEqual(bluePieces.length, 4, '4 blue pieces');
+        assertEqual(greenPieces.length, 4, '4 green pieces');
+        assertEqual(yellowPieces.length, 4, '4 yellow pieces');
+    })();
+
+    (function() {
+        var allHaveNumbers = true;
+        var pieces = document.querySelectorAll('#board-container .piece');
+        pieces.forEach(function(el) {
+            var num = parseInt(el.textContent);
+            if (isNaN(num) || num < 1 || num > 4) allHaveNumbers = false;
+        });
+        assert(allHaveNumbers, 'All pieces display numbers 1-4');
+    })();
+
+    (function() {
+        assertEqual(pieceElements.length, 16, 'pieceElements array has 16 entries');
+    })();
+
+    // ================================================================
+    // 12. Piece Positioning
+    // ================================================================
+    section('Piece Position Rendering');
+    resetForTest();
+
+    (function() {
+        var allAtHome = true;
+        STATE.pieces.forEach(function(piece, idx) {
+            var expected = homePositions[piece.player][piece.index];
+            var el = pieceElements[idx];
+            var actualLeft = parseFloat(el.style.left);
+            var actualTop = parseFloat(el.style.top);
+            // Pieces are offset by -14 from center
+            if (Math.abs(actualLeft - (expected.x - 14)) > 1 ||
+                Math.abs(actualTop - (expected.y - 14)) > 1) {
+                allAtHome = false;
+            }
+        });
+        assert(allAtHome, 'All pieces positioned at home coordinates');
+    })();
+
+    // Test getPiecePosition for different states
+    (function() {
+        var piece = { player: 0, index: 0, state: 'home', trackPos: -1, finishPos: -1 };
+        var pos = getPiecePosition(piece);
+        assert(pos.x === homePositions[0][0].x && pos.y === homePositions[0][0].y,
+            'getPiecePosition returns home position for home state');
+    })();
+
+    (function() {
+        var piece = { player: 1, index: 0, state: 'track', trackPos: 20, finishPos: -1 };
+        var pos = getPiecePosition(piece);
+        assert(pos.x === trackPositions[20].x && pos.y === trackPositions[20].y,
+            'getPiecePosition returns track position for track state');
+    })();
+
+    (function() {
+        var piece = { player: 2, index: 0, state: 'finish', trackPos: -1, finishPos: 3 };
+        var pos = getPiecePosition(piece);
+        assert(pos.x === finishPositions[2][3].x && pos.y === finishPositions[2][3].y,
+            'getPiecePosition returns finish position for finish state');
+    })();
+
+    (function() {
+        var piece = { player: 3, index: 0, state: 'finished', trackPos: -1, finishPos: -1 };
+        var pos = getPiecePosition(piece);
+        var lastFinish = finishPositions[3][FINISH_LANE_LENGTH - 1];
+        assert(pos.x === lastFinish.x && pos.y === lastFinish.y,
+            'getPiecePosition returns last finish pos for finished state');
+    })();
+
+    // ================================================================
+    // 13. UI State Management
+    // ================================================================
+    section('UI State Management');
+    resetForTest();
+
+    (function() {
+        var btn = document.getElementById('dice-btn');
+        assert(!btn.disabled, 'Dice button enabled at start of turn');
+    })();
+
+    (function() {
+        var info = document.getElementById('game-info');
+        assert(info.innerHTML.length > 0, 'Game info displays text');
+    })();
+
+    (function() {
+        var allDisabled = true;
+        pieceElements.forEach(function(el) {
+            if (!el.classList.contains('disabled')) allDisabled = false;
+        });
+        assert(allDisabled, 'All pieces disabled before dice roll');
+    })();
+
+    // Simulate dice roll state
+    (function() {
+        STATE.diceValue = 6;
+        updateUI();
+        var btn = document.getElementById('dice-btn');
+        assert(btn.disabled, 'Dice button disabled after roll');
+
+        var movableCount = 0;
+        pieceElements.forEach(function(el) {
+            if (!el.classList.contains('disabled')) movableCount++;
+        });
+        assertEqual(movableCount, 4, '4 Red pieces clickable when dice is 6');
+    })();
+
+    // Non-current player pieces remain disabled
+    (function() {
+        STATE.diceValue = 6;
+        updateUI();
+        var bluePieces = pieceElements.slice(4, 8);
+        var allDisabled = bluePieces.every(function(el) {
+            return el.classList.contains('disabled');
+        });
+        assert(allDisabled, 'Non-current player pieces stay disabled');
+    })();
+
+    // ================================================================
+    // 14. Turn Management
+    // ================================================================
+    section('Turn Management');
+    resetForTest();
+
+    assertEqual(STATE.currentPlayer, 0, 'Starts with player 0 (Red)');
+
+    nextTurn();
+    assertEqual(STATE.currentPlayer, 1, 'After nextTurn: player 1 (Blue)');
+
+    nextTurn();
+    assertEqual(STATE.currentPlayer, 2, 'After nextTurn: player 2 (Green)');
+
+    nextTurn();
+    assertEqual(STATE.currentPlayer, 3, 'After nextTurn: player 3 (Yellow)');
+
+    nextTurn();
+    assertEqual(STATE.currentPlayer, 0, 'Turn wraps back to player 0 (Red)');
+
+    // ================================================================
+    // 15. Restart / Reset
+    // ================================================================
+    section('Game Reset');
+
+    // Modify state then reset
+    STATE.currentPlayer = 2;
+    STATE.diceValue = 5;
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 15;
+    STATE.pieces[4].state = 'finished';
+
+    resetForTest();
+
+    assertEqual(STATE.currentPlayer, 0, 'Reset restores player to 0');
+    assertEqual(STATE.diceValue, null, 'Reset clears dice value');
+    (function() {
+        var allHome = STATE.pieces.every(function(p) { return p.state === 'home'; });
+        assert(allHome, 'Reset returns all pieces to home');
+    })();
+
+    // resetGame function exists
+    assert(typeof resetGame === 'function', 'resetGame function is available');
+
+    // ================================================================
+    // 16. Animation Config
+    // ================================================================
+    section('Animation Configuration');
+
+    assert(typeof ANIMATION_CONFIG === 'object', 'ANIMATION_CONFIG exists');
+    assert(ANIMATION_CONFIG.stepDuration <= 150,
+        'Step duration <= 150ms (' + ANIMATION_CONFIG.stepDuration + 'ms)');
+    assert(ANIMATION_CONFIG.stepDuration > 0,
+        'Step duration > 0ms');
+    assert(ANIMATION_CONFIG.diceRollDuration > 0,
+        'Dice roll duration > 0ms');
+    assert(ANIMATION_CONFIG.finishFlashCount > 0,
+        'Finish flash count > 0');
+
+    // ================================================================
+    // 17. Edge Cases - Finish Lane Entry
+    // ================================================================
+    section('Edge Cases - Finish Lane Entry');
+
+    // Red piece exactly at finish entry, dice 1 => enters finish lane
+    resetForTest();
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 51; // Red finish entry
+    (function() {
+        var rel = getPlayerTrackPos(0, 51);
+        assertEqual(rel, 51, 'Red at abs 51 = rel 51');
+        var newRel = rel + 1;
+        assert(newRel >= TRACK_LENGTH, 'rel 51 + dice 1 >= TRACK_LENGTH');
+        var finishSteps = newRel - (TRACK_LENGTH - 1);
+        assertEqual(finishSteps, 1, 'finishSteps = 1');
+        var m = getMovablePieces(0, 1);
+        assert(m.includes(0), 'Red at finish entry + dice 1 can enter finish');
+    })();
+
+    // Blue piece near finish entry
+    resetForTest();
+    STATE.pieces[4].state = 'track';
+    STATE.pieces[4].trackPos = 10; // Blue rel = 10-13+52 = 49
+    (function() {
+        var rel = getPlayerTrackPos(1, 10);
+        assertEqual(rel, 49, 'Blue at abs 10 = rel 49');
+        // dice 3: newRel=52, finishSteps=1
+        var m = getMovablePieces(1, 3);
+        assert(m.includes(4), 'Blue at rel 49 + dice 3 can enter finish');
+        // dice 6: newRel=55, finishSteps=4, <=6 ok
+        m = getMovablePieces(1, 6);
+        assert(m.includes(4), 'Blue at rel 49 + dice 6 can enter finish (steps=4)');
+    })();
+
+    // Cannot overshoot finish lane from track
+    resetForTest();
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 44; // Red rel=44, need dice >7 to overshoot
+    (function() {
+        // rel 44 + 6 = 50, still on track (< 52), ok
+        var m6 = getMovablePieces(0, 6);
+        assert(m6.includes(0), 'Red at rel 44 + dice 6 stays on track');
+    })();
+
+    // Piece at rel 46, dice 6: newRel=52, finishSteps=1
+    resetForTest();
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 46;
+    (function() {
+        var m = getMovablePieces(0, 6);
+        assert(m.includes(0), 'Red at rel 46 + dice 6 enters finish (steps=1)');
+    })();
+
+    // ================================================================
+    // 18. Edge Cases - Kick Mechanics
+    // ================================================================
+    section('Edge Cases - Kick Mechanics');
+
+    // Opponent at same position should be kickable
+    resetForTest();
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 15;
+    STATE.pieces[4].state = 'track'; // Blue piece
+    STATE.pieces[4].trackPos = 15;
+    (function() {
+        var kicked = findPieceAtTrackPos(15, 0);
+        assertEqual(kicked, 4, 'findPieceAtTrackPos detects opponent at same position');
+        assert(STATE.pieces[kicked].player !== STATE.pieces[0].player,
+            'Detected piece belongs to different player');
+    })();
+
+    // Same player pieces don't kick each other
+    resetForTest();
+    STATE.pieces[0].state = 'track';
+    STATE.pieces[0].trackPos = 15;
+    STATE.pieces[1].state = 'track'; // Same player (Red)
+    STATE.pieces[1].trackPos = 15;
+    (function() {
+        var found = findPieceAtTrackPos(15, 0);
+        assertEqual(found, 1, 'findPieceAtTrackPos finds same-player piece');
+        assert(STATE.pieces[found].player === STATE.pieces[0].player,
+            'Found piece is same player (no kick should occur)');
+    })();
+
+    // ================================================================
+    // 19. Color and Name Functions
+    // ================================================================
+    section('Player Display');
+
+    (function() {
+        var colors = [0, 1, 2, 3].map(function(i) { return getPlayerColor(i); });
+        var uniqueColors = colors.filter(function(c, i) { return colors.indexOf(c) === i; });
+        assertEqual(uniqueColors.length, 4, 'All 4 player colors are distinct');
+    })();
+
+    (function() {
+        var lightColors = [0, 1, 2, 3].map(function(i) { return getPlayerLightColor(i); });
+        var unique = lightColors.filter(function(c, i) { return lightColors.indexOf(c) === i; });
+        assertEqual(unique.length, 4, 'All 4 light colors are distinct');
+    })();
+
+    assertEqual(PLAYER_NAMES.length, 4, '4 player names defined');
+    assertEqual(PLAYERS.length, 4, '4 player identifiers defined');
+
+    // ================================================================
+    // 20. Pure JavaScript Validation
+    // ================================================================
+    section('No Framework Dependencies');
+
+    assert(typeof jQuery === 'undefined', 'jQuery not loaded');
+    assert(typeof React === 'undefined', 'React not loaded');
+    assert(typeof Vue === 'undefined', 'Vue not loaded');
+    assert(typeof angular === 'undefined', 'Angular not loaded');
+    assert(typeof _ === 'undefined' || typeof _.VERSION === 'undefined', 'Lodash/Underscore not loaded');
+
+    (function() {
+        var scripts = document.querySelectorAll('script[src]');
+        var externalCount = 0;
+        scripts.forEach(function(s) {
+            if (s.src && !s.src.includes('game.js') && !s.src.includes('test')) {
+                externalCount++;
+            }
+        });
+        assertEqual(externalCount, 0, 'No external script dependencies');
+    })();
+
+    // ================================================================
+    // Render results
+    // ================================================================
+    (function renderResults() {
+        var output = document.getElementById('test-output');
+        var summary = document.getElementById('summary');
+
+        var total = testResults.passed + testResults.failed + testResults.skipped;
+        var summaryClass = testResults.failed === 0 ? 'all-pass' : 'has-fail';
+        summary.className = 'summary ' + summaryClass;
+        summary.innerHTML = total + ' tests: ' +
+            testResults.passed + ' passed, ' +
+            testResults.failed + ' failed' +
+            (testResults.skipped ? ', ' + testResults.skipped + ' skipped' : '');
+
+        var html = '';
+        testResults.sections.forEach(function(sec) {
+            html += '<div class="section"><h2>' + sec.name + '</h2>';
+            sec.tests.forEach(function(t) {
+                var badge = '<span class="badge ' + t.status + '">' +
+                    t.status.toUpperCase() + '</span>';
+                var detail = t.detail ? '<span class="detail">' + t.detail + '</span>' : '';
+                html += '<div class="test-row">' + badge + t.name + detail + '</div>';
+            });
+            html += '</div>';
+        });
+
+        // Browser info
+        html += '<div class="section"><h2>Browser Information</h2>';
+        html += '<div class="test-row">User Agent: ' + navigator.userAgent + '</div>';
+        html += '<div class="test-row">Language: ' + navigator.language + '</div>';
+        html += '<div class="test-row">Platform: ' + navigator.platform + '</div>';
+        html += '<div class="test-row">Screen: ' + screen.width + 'x' + screen.height + '</div>';
+        html += '</div>';
+
+        // Manual test procedure
+        html += '<div class="manual-section">';
+        html += '<h2>Manual Test Procedure</h2>';
+        html += '<p>Open <code>index.html</code> in each target browser and verify:</p>';
+        html += '<ol>';
+        html += '<li><strong>Board renders correctly:</strong> 600x600 board with track cells forming a square loop, 4 colored home bases in corners, 4 finish lanes pointing toward center.</li>';
+        html += '<li><strong>Initial state:</strong> All 16 pieces at home positions (4 per corner). Game info shows "Red\'s turn, roll dice." Dice button enabled.</li>';
+        html += '<li><strong>Dice roll:</strong> Click "Roll Dice" button. Dice display animates with random numbers, then shows final value. Button disables after roll.</li>';
+        html += '<li><strong>Piece selection:</strong> After rolling, only valid pieces are clickable (not dimmed). With dice != 6, no home pieces are clickable. With dice = 6, home pieces become clickable.</li>';
+        html += '<li><strong>Home exit (dice 6):</strong> Click a home piece. It animates to the player\'s start position on the track. Player gets another turn.</li>';
+        html += '<li><strong>Track movement:</strong> After rolling, click a track piece. It animates step-by-step along the track. Verify smooth animation (no teleporting).</li>';
+        html += '<li><strong>Kick/push mechanics:</strong> Move a piece onto an opponent\'s position. The opponent piece should animate back to its home base with a bump-and-fly effect.</li>';
+        html += '<li><strong>Turn rotation:</strong> After a non-6 roll and move, turn passes to next player (Red -> Blue -> Green -> Yellow -> Red).</li>';
+        html += '<li><strong>Extra turn on 6:</strong> Rolling 6 gives the same player another turn after moving.</li>';
+        html += '<li><strong>Finish lane entry:</strong> Move a piece past its finish entry cell. It should enter the colored finish lane and animate with a flash effect.</li>';
+        html += '<li><strong>Exact finish:</strong> A piece in the finish lane must roll the exact number to reach position 5. Rolling too high makes it unmovable.</li>';
+        html += '<li><strong>Win detection:</strong> When all 4 pieces of one player reach finished state, the game announces the winner and disables all controls.</li>';
+        html += '<li><strong>Restart:</strong> Click "Restart" button at any point. Board resets to initial state with all pieces at home.</li>';
+        html += '<li><strong>Skip turn:</strong> If a player has no valid moves (e.g., all pieces home and dice != 6), a message displays briefly and turn passes automatically.</li>';
+        html += '</ol>';
+        html += '<h3>Cross-Browser Checklist</h3>';
+        html += '<ol>';
+        html += '<li><strong>Chrome (latest):</strong> Full feature support expected. Verify animations are smooth at 60fps.</li>';
+        html += '<li><strong>Firefox (latest):</strong> Verify requestAnimationFrame timing and CSS rendering match Chrome.</li>';
+        html += '<li><strong>Safari (latest, if available):</strong> Check for any WebKit-specific rendering differences, especially with border-radius and box-shadow on piece elements.</li>';
+        html += '<li><strong>Edge (latest):</strong> Chromium-based, should match Chrome behavior.</li>';
+        html += '</ol>';
+        html += '</div>';
+
+        output.innerHTML = html;
+    })();
+    </script>
+</body>
+</html>
