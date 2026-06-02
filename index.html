@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sokoban</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 8px;
+            color: #e0e0e0;
+            font-size: 24px;
+            letter-spacing: 2px;
+        }
+        #status-bar {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            margin-bottom: 12px;
+            font-size: 16px;
+        }
+        #status-bar span {
+            color: #aaa;
+        }
+        #status-bar .value {
+            color: #fff;
+            font-weight: bold;
+        }
+        #game-canvas {
+            border: 2px solid #333;
+            border-radius: 4px;
+            background: #16213e;
+        }
+        #message {
+            margin-top: 10px;
+            font-size: 18px;
+            min-height: 28px;
+            color: #4ecca3;
+            font-weight: bold;
+        }
+        #controls {
+            margin-top: 14px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            padding: 8px 18px;
+            font-size: 14px;
+            background: #0f3460;
+            color: #e0e0e0;
+            border: 1px solid #1a1a5e;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        button:hover { background: #16458a; }
+        button:active { background: #0a2540; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        #help {
+            margin-top: 16px;
+            font-size: 13px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>SOKOBAN</h1>
+    <div id="status-bar">
+        <span>Level: <span id="level-display" class="value">1</span> / <span id="total-levels" class="value">5</span></span>
+        <span>Steps: <span id="step-counter" class="value">0</span></span>
+    </div>
+    <canvas id="game-canvas"></canvas>
+    <div id="message"></div>
+    <div id="controls">
+        <button id="btn-prev" title="Previous level">&larr; Prev</button>
+        <button id="btn-restart" title="Restart level (R)">Restart</button>
+        <button id="btn-next" title="Next level">Next &rarr;</button>
+    </div>
+    <div id="help">Arrow keys or WASD to move &middot; R to restart &middot; N/P for next/prev level</div>
+
+    <script type="module">
+        import { TILE, DIRECTION, createGameState, move, getTotalLevels } from './engine.js';
+
+        const CELL_SIZE = 48;
+        const COLORS = {
+            background: '#16213e',
+            floor: '#1a1a2e',
+            wall: '#4a4a6a',
+            wallTop: '#5a5a7a',
+            target: '#e94560',
+            targetDot: '#e94560',
+            box: '#c8a951',
+            boxOnTarget: '#4ecca3',
+            player: '#3498db',
+            playerEye: '#fff',
+            grid: '#1e1e3a',
+        };
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const levelDisplay = document.getElementById('level-display');
+        const totalLevelsDisplay = document.getElementById('total-levels');
+        const stepCounter = document.getElementById('step-counter');
+        const messageEl = document.getElementById('message');
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        const btnRestart = document.getElementById('btn-restart');
+
+        let state = null;
+        let currentLevel = 0;
+
+        function initLevel(levelIndex) {
+            currentLevel = levelIndex;
+            state = createGameState(levelIndex);
+            canvas.width = state.cols * CELL_SIZE;
+            canvas.height = state.rows * CELL_SIZE;
+            totalLevelsDisplay.textContent = getTotalLevels();
+            messageEl.textContent = '';
+            updateUI();
+            render();
+        }
+
+        function updateUI() {
+            levelDisplay.textContent = currentLevel + 1;
+            stepCounter.textContent = state.steps;
+            btnPrev.disabled = currentLevel <= 0;
+            btnNext.disabled = currentLevel >= getTotalLevels() - 1;
+        }
+
+        function render() {
+            ctx.fillStyle = COLORS.background;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (let r = 0; r < state.rows; r++) {
+                for (let c = 0; c < state.cols; c++) {
+                    const x = c * CELL_SIZE;
+                    const y = r * CELL_SIZE;
+                    const tile = state.grid[r][c];
+                    drawTile(x, y, tile);
+                }
+            }
+        }
+
+        function drawTile(x, y, tile) {
+            const pad = 1;
+
+            switch (tile) {
+                case TILE.FLOOR:
+                    ctx.fillStyle = COLORS.floor;
+                    ctx.fillRect(x + pad, y + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+                    break;
+
+                case TILE.WALL:
+                    ctx.fillStyle = COLORS.wall;
+                    ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                    ctx.fillStyle = COLORS.wallTop;
+                    ctx.fillRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 8);
+                    break;
+
+                case TILE.TARGET:
+                    ctx.fillStyle = COLORS.floor;
+                    ctx.fillRect(x + pad, y + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+                    ctx.fillStyle = COLORS.targetDot;
+                    ctx.beginPath();
+                    ctx.arc(x + CELL_SIZE / 2, y + CELL_SIZE / 2, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = COLORS.targetDot;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(x + CELL_SIZE / 2, y + CELL_SIZE / 2, 12, 0, Math.PI * 2);
+                    ctx.stroke();
+                    break;
+
+                case TILE.BOX:
+                    ctx.fillStyle = COLORS.floor;
+                    ctx.fillRect(x + pad, y + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+                    drawBox(x, y, COLORS.box);
+                    break;
+
+                case TILE.BOX_ON_TARGET:
+                    ctx.fillStyle = COLORS.floor;
+                    ctx.fillRect(x + pad, y + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+                    drawBox(x, y, COLORS.boxOnTarget);
+                    break;
+
+                case TILE.PLAYER:
+                    ctx.fillStyle = COLORS.floor;
+                    ctx.fillRect(x + pad, y + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+                    drawPlayer(x, y);
+                    break;
+
+                case TILE.PLAYER_ON_TARGET:
+                    ctx.fillStyle = COLORS.floor;
+                    ctx.fillRect(x + pad, y + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+                    ctx.fillStyle = COLORS.targetDot;
+                    ctx.beginPath();
+                    ctx.arc(x + CELL_SIZE / 2, y + CELL_SIZE / 2, 12, 0, Math.PI * 2);
+                    ctx.fill();
+                    drawPlayer(x, y);
+                    break;
+            }
+        }
+
+        function drawBox(x, y, color) {
+            const inset = 6;
+            ctx.fillStyle = color;
+            ctx.fillRect(x + inset, y + inset, CELL_SIZE - inset * 2, CELL_SIZE - inset * 2);
+            ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(x + inset, y + inset, CELL_SIZE - inset * 2, CELL_SIZE - inset * 2);
+            // cross lines on box
+            ctx.beginPath();
+            ctx.moveTo(x + inset, y + inset);
+            ctx.lineTo(x + CELL_SIZE - inset, y + CELL_SIZE - inset);
+            ctx.moveTo(x + CELL_SIZE - inset, y + inset);
+            ctx.lineTo(x + inset, y + CELL_SIZE - inset);
+            ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+            ctx.stroke();
+        }
+
+        function drawPlayer(x, y) {
+            const cx = x + CELL_SIZE / 2;
+            const cy = y + CELL_SIZE / 2;
+            ctx.fillStyle = COLORS.player;
+            ctx.beginPath();
+            ctx.arc(cx, cy, CELL_SIZE / 2 - 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            // eyes
+            ctx.fillStyle = COLORS.playerEye;
+            ctx.beginPath();
+            ctx.arc(cx - 5, cy - 3, 3, 0, Math.PI * 2);
+            ctx.arc(cx + 5, cy - 3, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function handleMove(direction) {
+            if (state.completed) return;
+            const result = move(state, direction);
+            if (result.moved) {
+                updateUI();
+                render();
+                if (state.completed) {
+                    messageEl.textContent = 'Level complete!';
+                }
+            }
+        }
+
+        // Keyboard input
+        document.addEventListener('keydown', (e) => {
+            switch (e.key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    e.preventDefault();
+                    handleMove(DIRECTION.UP);
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    e.preventDefault();
+                    handleMove(DIRECTION.DOWN);
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    e.preventDefault();
+                    handleMove(DIRECTION.LEFT);
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    e.preventDefault();
+                    handleMove(DIRECTION.RIGHT);
+                    break;
+                case 'r':
+                case 'R':
+                    e.preventDefault();
+                    initLevel(currentLevel);
+                    break;
+                case 'n':
+                case 'N':
+                    e.preventDefault();
+                    if (currentLevel < getTotalLevels() - 1) initLevel(currentLevel + 1);
+                    break;
+                case 'p':
+                case 'P':
+                    e.preventDefault();
+                    if (currentLevel > 0) initLevel(currentLevel - 1);
+                    break;
+            }
+        });
+
+        // UI button handlers
+        btnRestart.addEventListener('click', () => initLevel(currentLevel));
+        btnPrev.addEventListener('click', () => {
+            if (currentLevel > 0) initLevel(currentLevel - 1);
+        });
+        btnNext.addEventListener('click', () => {
+            if (currentLevel < getTotalLevels() - 1) initLevel(currentLevel + 1);
+        });
+
+        // Start
+        initLevel(0);
+    </script>
+</body>
+</html>
