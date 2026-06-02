@@ -701,6 +701,18 @@ function checkWinner() {
 
 diceBtn.addEventListener('click', onDiceClick);
 
+function resetGame() {
+    initGameState();
+    createBoard();
+    diceDisplay.textContent = '?';
+    updateUI();
+}
+
+const restartBtn = document.getElementById('restart-btn');
+if (restartBtn) {
+    restartBtn.addEventListener('click', resetGame);
+}
+
 function init() {
     initGameState();
     createBoard();

@@ -88,6 +88,16 @@
         }
         #dice-btn:hover { background: #1565c0; }
         #dice-btn:disabled { background: #bbb; cursor: not-allowed; }
+        #restart-btn {
+            padding: 12px 20px;
+            font-size: 16px;
+            background: #757575;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        #restart-btn:hover { background: #616161; }
         #dice-display {
             width: 60px;
             height: 60px;
@@ -120,6 +130,7 @@
     <div id="controls">
         <button id="dice-btn">掷骰子</button>
         <div id="dice-display">?</div>
+        <button id="restart-btn">重新开始</button>
     </div>
 
     <script src="game.js"></script>
