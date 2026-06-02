@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sokoban</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    user-select: none;
+  }
+
+  header {
+    padding: 20px 0 10px;
+    text-align: center;
+  }
+
+  header h1 {
+    font-size: 2rem;
+    font-weight: 300;
+    letter-spacing: 0.3em;
+    color: #e94560;
+  }
+
+  .hud {
+    display: flex;
+    gap: 30px;
+    padding: 10px 0;
+    font-size: 0.95rem;
+    letter-spacing: 0.05em;
+  }
+
+  .hud span { color: #aaa; }
+  .hud strong { color: #fff; }
+
+  #game-canvas {
+    border: 2px solid #333;
+    border-radius: 4px;
+    margin: 10px 0;
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    padding: 10px 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  button {
+    background: #16213e;
+    color: #e0e0e0;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 8px 18px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  button:hover { background: #1a3a5c; border-color: #e94560; }
+  button:active { background: #e94560; color: #fff; }
+
+  .level-select {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 6px 0;
+  }
+
+  .level-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .level-btn.active { background: #e94560; border-color: #e94560; color: #fff; }
+  .level-btn.completed { border-color: #4ecca3; color: #4ecca3; }
+
+  .message {
+    font-size: 1.1rem;
+    padding: 8px 0;
+    min-height: 30px;
+    color: #4ecca3;
+    text-align: center;
+  }
+
+  .help {
+    color: #666;
+    font-size: 0.75rem;
+    padding: 10px 0 20px;
+    text-align: center;
+    max-width: 400px;
+    line-height: 1.6;
+  }
+
+  .mobile-dpad {
+    display: none;
+    padding: 10px 0;
+  }
+
+  @media (max-width: 600px) {
+    .mobile-dpad { display: grid; }
+  }
+
+  .mobile-dpad {
+    grid-template-columns: 60px 60px 60px;
+    grid-template-rows: 60px 60px 60px;
+    gap: 4px;
+  }
+
+  .dpad-btn {
+    width: 60px;
+    height: 60px;
+    font-size: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+  }
+
+  .dpad-up    { grid-column: 2; grid-row: 1; }
+  .dpad-left  { grid-column: 1; grid-row: 2; }
+  .dpad-right { grid-column: 3; grid-row: 2; }
+  .dpad-down  { grid-column: 2; grid-row: 3; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SOKOBAN</h1>
+</header>
+
+<div class="hud">
+  <div><span>Level </span><strong id="hud-level">1</strong></div>
+  <div><span>Steps </span><strong id="hud-steps">0</strong></div>
+  <div><span>Pushes </span><strong id="hud-pushes">0</strong></div>
+</div>
+
+<canvas id="game-canvas" width="560" height="560"></canvas>
+
+<div class="message" id="message"></div>
+
+<div class="controls">
+  <button id="btn-undo">Undo (Z)</button>
+  <button id="btn-restart">Restart (R)</button>
+  <button id="btn-prev">← Prev</button>
+  <button id="btn-next">Next →</button>
+</div>
+
+<div class="level-select" id="level-select"></div>
+
+<div class="mobile-dpad">
+  <button class="dpad-btn dpad-up" data-dir="up">▲</button>
+  <button class="dpad-btn dpad-left" data-dir="left">◄</button>
+  <button class="dpad-btn dpad-right" data-dir="right">►</button>
+  <button class="dpad-btn dpad-down" data-dir="down">▼</button>
+</div>
+
+<div class="help">
+  Arrow keys or WASD to move &middot; Z to undo &middot; R to restart<br>
+  Push all crates onto the targets to complete each level.
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // Tile types
+  var FLOOR  = 0;
+  var WALL   = 1;
+  var TARGET = 2;
+  var CRATE  = 3;
+  var CRATE_ON_TARGET = 4;
+  var PLAYER = 5;
+  var PLAYER_ON_TARGET = 6;
+
+  // Level definitions (standard Sokoban notation)
+  // # = wall, . = target, $ = crate, * = crate on target,
+  // @ = player, + = player on target, space = floor, - = floor (explicit)
+  var LEVEL_DATA = [
+    { name: 'Starter',
+      map: [
+        '  ####',
+        '###  #',
+        '#    #',
+        '# #  #',
+        '# . .#',
+        '#  $@#',
+        '# $ ##',
+        '#  ##',
+        '####'
+      ]},
+    { name: 'Two Step',
+      map: [
+        '######',
+        '#    #',
+        '# ## ##',
+        '# $  .#',
+        '## $ .#',
+        ' ##@ ##',
+        '  ####'
+      ]},
+    { name: 'L-Shape',
+      map: [
+        '  ####',
+        '###  ###',
+        '#   $  #',
+        '# #  # #',
+        '# .$.  #',
+        '##.@ ###',
+        ' # $ #',
+        ' #   #',
+        ' #####'
+      ]},
+    { name: 'Corridor',
+      map: [
+        '########',
+        '#      #',
+        '# #### #',
+        '# #..# #',
+        '# #..# #',
+        '# $$$$ #',
+        '#   @  #',
+        '########'
+      ]},
+    { name: 'Cross',
+      map: [
+        '  ####',
+        '  #  ###',
+        '  #$ $ #',
+        '###  $ #',
+        '#. .$.##',
+        '#.  # #',
+        '##@#  #',
+        ' #   ##',
+        ' #####'
+      ]},
+    { name: 'Zigzag',
+      map: [
+        ' #######',
+        '##  #  #',
+        '#   $  #',
+        '#  ##$##',
+        '## #. .#',
+        ' # $ .#',
+        ' #  @##',
+        ' #####'
+      ]},
+    { name: 'Warehouse',
+      map: [
+        '  ######',
+        '  #    #',
+        '### ## ##',
+        '# $ $   #',
+        '# ..@.. #',
+        '#   $ $ #',
+        '## ## ###',
+        ' #    #',
+        ' ######'
+      ]},
+    { name: 'Spiral',
+      map: [
+        '########',
+        '#  . . #',
+        '# $#$# #',
+        '#  . . #',
+        '# $#$# #',
+        '#      #',
+        '#  @   #',
+        '########'
+      ]},
+    { name: 'Chambers',
+      map: [
+        '  #####',
+        '###   ##',
+        '#   #  #',
+        '# $.@.$#',
+        '#   #  #',
+        '##   ###',
+        ' #####'
+      ]},
+    { name: 'Finale',
+      map: [
+        ' ########',
+        '##  #   #',
+        '#   $   #',
+        '#  .#.$ #',
+        '## #@# ##',
+        ' # $.  #',
+        ' # $ . #',
+        ' #  #  #',
+        ' #######'
+      ]}
+  ];
+
+  // Parse a level map into a grid
+  function parseLevel(data) {
+    var rows = data.map;
+    var maxWidth = 0;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].length > maxWidth) maxWidth = rows[i].length;
+    }
+
+    var grid = [];
+    var playerPos = null;
+
+    for (var r = 0; r < rows.length; r++) {
+      var row = [];
+      for (var c = 0; c < maxWidth; c++) {
+        var ch = c < rows[r].length ? rows[r][c] : ' ';
+        switch (ch) {
+          case '#': row.push(WALL); break;
+          case '.': row.push(TARGET); break;
+          case '$': row.push(CRATE); break;
+          case '*': row.push(CRATE_ON_TARGET); break;
+          case '@': row.push(PLAYER); playerPos = { r: r, c: c }; break;
+          case '+': row.push(PLAYER_ON_TARGET); playerPos = { r: r, c: c }; break;
+          default:  row.push(FLOOR); break;
+        }
+      }
+      grid.push(row);
+    }
+
+    return { grid: grid, player: playerPos, rows: rows.length, cols: maxWidth };
+  }
+
+  // Deep clone a grid
+  function cloneGrid(grid) {
+    var copy = [];
+    for (var r = 0; r < grid.length; r++) {
+      copy.push(grid[r].slice());
+    }
+    return copy;
+  }
+
+  // Game state
+  var canvas = document.getElementById('game-canvas');
+  var ctx = canvas.getContext('2d');
+  var currentLevel = 0;
+  var grid = [];
+  var playerPos = { r: 0, c: 0 };
+  var levelRows = 0;
+  var levelCols = 0;
+  var steps = 0;
+  var pushes = 0;
+  var history = [];
+  var completed = {};
+  var won = false;
+  var tileSize = 0;
+  var offsetX = 0;
+  var offsetY = 0;
+
+  // UI elements
+  var hudLevel = document.getElementById('hud-level');
+  var hudSteps = document.getElementById('hud-steps');
+  var hudPushes = document.getElementById('hud-pushes');
+  var messageEl = document.getElementById('message');
+  var levelSelectEl = document.getElementById('level-select');
+
+  function loadLevel(index) {
+    currentLevel = index;
+    var parsed = parseLevel(LEVEL_DATA[index]);
+    grid = parsed.grid;
+    playerPos = { r: parsed.player.r, c: parsed.player.c };
+    levelRows = parsed.rows;
+    levelCols = parsed.cols;
+    steps = 0;
+    pushes = 0;
+    history = [];
+    won = false;
+    messageEl.textContent = '';
+
+    // Calculate tile size to fit canvas
+    var maxTileW = Math.floor(canvas.width / levelCols);
+    var maxTileH = Math.floor(canvas.height / levelRows);
+    tileSize = Math.min(maxTileW, maxTileH, 64);
+    offsetX = Math.floor((canvas.width - levelCols * tileSize) / 2);
+    offsetY = Math.floor((canvas.height - levelRows * tileSize) / 2);
+
+    updateHUD();
+    updateLevelButtons();
+    render();
+  }
+
+  function updateHUD() {
+    hudLevel.textContent = (currentLevel + 1) + '/' + LEVEL_DATA.length;
+    hudSteps.textContent = steps;
+    hudPushes.textContent = pushes;
+  }
+
+  function buildLevelButtons() {
+    levelSelectEl.innerHTML = '';
+    for (var i = 0; i < LEVEL_DATA.length; i++) {
+      var btn = document.createElement('button');
+      btn.className = 'level-btn';
+      btn.textContent = i + 1;
+      btn.title = LEVEL_DATA[i].name;
+      btn.setAttribute('data-level', i);
+      btn.addEventListener('click', (function(idx) {
+        return function () { loadLevel(idx); };
+      })(i));
+      levelSelectEl.appendChild(btn);
+    }
+  }
+
+  function updateLevelButtons() {
+    var btns = levelSelectEl.querySelectorAll('.level-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.remove('active', 'completed');
+      if (i === currentLevel) btns[i].classList.add('active');
+      else if (completed[i]) btns[i].classList.add('completed');
+    }
+  }
+
+  // Check if all crates are on targets
+  function checkWin() {
+    for (var r = 0; r < grid.length; r++) {
+      for (var c = 0; c < grid[r].length; c++) {
+        if (grid[r][c] === CRATE) return false;
+      }
+    }
+    return true;
+  }
+
+  // Move player in a direction
+  function move(dr, dc) {
+    if (won) return;
+
+    var nr = playerPos.r + dr;
+    var nc = playerPos.c + dc;
+
+    if (nr < 0 || nr >= levelRows || nc < 0 || nc >= levelCols) return;
+
+    var target = grid[nr][nc];
+
+    // Wall - can't move
+    if (target === WALL) return;
+
+    var pushed = false;
+
+    // Crate - try to push
+    if (target === CRATE || target === CRATE_ON_TARGET) {
+      var br = nr + dr;
+      var bc = nc + dc;
+      if (br < 0 || br >= levelRows || bc < 0 || bc >= levelCols) return;
+      var behind = grid[br][bc];
+      if (behind === WALL || behind === CRATE || behind === CRATE_ON_TARGET) return;
+
+      // Save state for undo
+      history.push({
+        grid: cloneGrid(grid),
+        player: { r: playerPos.r, c: playerPos.c },
+        steps: steps,
+        pushes: pushes
+      });
+
+      // Move crate
+      grid[br][bc] = (behind === TARGET) ? CRATE_ON_TARGET : CRATE;
+      grid[nr][nc] = (target === CRATE_ON_TARGET) ? TARGET : FLOOR;
+      pushed = true;
+    } else {
+      // Save state for undo
+      history.push({
+        grid: cloneGrid(grid),
+        player: { r: playerPos.r, c: playerPos.c },
+        steps: steps,
+        pushes: pushes
+      });
+    }
+
+    // Move player
+    var currentTile = grid[playerPos.r][playerPos.c];
+    grid[playerPos.r][playerPos.c] = (currentTile === PLAYER_ON_TARGET) ? TARGET : FLOOR;
+
+    var destTile = grid[nr][nc];
+    grid[nr][nc] = (destTile === TARGET) ? PLAYER_ON_TARGET : PLAYER;
+
+    playerPos.r = nr;
+    playerPos.c = nc;
+    steps++;
+    if (pushed) pushes++;
+
+    updateHUD();
+    render();
+
+    if (checkWin()) {
+      won = true;
+      completed[currentLevel] = true;
+      updateLevelButtons();
+      if (currentLevel < LEVEL_DATA.length - 1) {
+        messageEl.textContent = 'Level complete! Press Next or → to continue.';
+      } else {
+        messageEl.textContent = 'Congratulations! All levels completed!';
+      }
+    }
+  }
+
+  function undo() {
+    if (history.length === 0 || won) return;
+    var state = history.pop();
+    grid = state.grid;
+    playerPos = state.player;
+    steps = state.steps;
+    pushes = state.pushes;
+    updateHUD();
+    render();
+  }
+
+  function restart() {
+    loadLevel(currentLevel);
+  }
+
+  function prevLevel() {
+    if (currentLevel > 0) loadLevel(currentLevel - 1);
+  }
+
+  function nextLevel() {
+    if (currentLevel < LEVEL_DATA.length - 1) loadLevel(currentLevel + 1);
+  }
+
+  // Rendering
+  var COLORS = {
+    bg:            '#1a1a2e',
+    floor:         '#222244',
+    wall:          '#4a4a6a',
+    wallTop:       '#5a5a7a',
+    target:        '#e94560',
+    crate:         '#f0a500',
+    crateOnTarget: '#4ecca3',
+    player:        '#3282b8',
+    playerOutline: '#5ab0e8'
+  };
+
+  function render() {
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (var r = 0; r < grid.length; r++) {
+      for (var c = 0; c < grid[r].length; c++) {
+        var x = offsetX + c * tileSize;
+        var y = offsetY + r * tileSize;
+        var tile = grid[r][c];
+        var pad = 1;
+
+        // Floor
+        if (tile !== WALL) {
+          ctx.fillStyle = COLORS.floor;
+          ctx.fillRect(x + pad, y + pad, tileSize - pad * 2, tileSize - pad * 2);
+        }
+
+        switch (tile) {
+          case WALL:
+            drawWall(x, y);
+            break;
+          case TARGET:
+          case PLAYER_ON_TARGET:
+            drawTarget(x, y);
+            if (tile === PLAYER_ON_TARGET) drawPlayer(x, y);
+            break;
+          case CRATE:
+            drawCrate(x, y, false);
+            break;
+          case CRATE_ON_TARGET:
+            drawTarget(x, y);
+            drawCrate(x, y, true);
+            break;
+          case PLAYER:
+            drawPlayer(x, y);
+            break;
+        }
+      }
+    }
+  }
+
+  function drawWall(x, y) {
+    var s = tileSize;
+    var inset = 1;
+    // Main wall body
+    ctx.fillStyle = COLORS.wall;
+    ctx.fillRect(x + inset, y + inset, s - inset * 2, s - inset * 2);
+    // Top highlight
+    ctx.fillStyle = COLORS.wallTop;
+    ctx.fillRect(x + inset, y + inset, s - inset * 2, s * 0.3);
+    // Bevel lines
+    ctx.strokeStyle = '#3a3a5a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + inset + 0.5, y + inset + 0.5, s - inset * 2 - 1, s - inset * 2 - 1);
+  }
+
+  function drawTarget(x, y) {
+    var cx = x + tileSize / 2;
+    var cy = y + tileSize / 2;
+    var r = tileSize * 0.2;
+
+    ctx.fillStyle = COLORS.target;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    // Diamond shape
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r, cy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Center dot
+    ctx.fillStyle = COLORS.target;
+    ctx.beginPath();
+    ctx.arc(cx, cy, tileSize * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawCrate(x, y, onTarget) {
+    var s = tileSize;
+    var margin = s * 0.12;
+    var size = s - margin * 2;
+
+    ctx.fillStyle = onTarget ? COLORS.crateOnTarget : COLORS.crate;
+    ctx.fillRect(x + margin, y + margin, size, size);
+
+    // Inner border
+    ctx.strokeStyle = onTarget ? '#3ab890' : '#d89400';
+    ctx.lineWidth = 2;
+    var inner = s * 0.22;
+    ctx.strokeRect(x + inner, y + inner, s - inner * 2, s - inner * 2);
+
+    // Cross lines
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + margin, y + margin);
+    ctx.lineTo(x + margin + size, y + margin + size);
+    ctx.moveTo(x + margin + size, y + margin);
+    ctx.lineTo(x + margin, y + margin + size);
+    ctx.stroke();
+  }
+
+  function drawPlayer(x, y) {
+    var cx = x + tileSize / 2;
+    var cy = y + tileSize / 2;
+    var r = tileSize * 0.32;
+
+    // Outer glow
+    ctx.fillStyle = COLORS.playerOutline;
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Body circle
+    ctx.fillStyle = COLORS.player;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner highlight
+    ctx.fillStyle = COLORS.playerOutline;
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.2, cy - r * 0.2, r * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Input handling
+  document.addEventListener('keydown', function (e) {
+    var handled = true;
+    switch (e.key) {
+      case 'ArrowUp':    case 'w': case 'W': move(-1, 0); break;
+      case 'ArrowDown':  case 's': case 'S': move(1, 0); break;
+      case 'ArrowLeft':  case 'a': case 'A': move(0, -1); break;
+      case 'ArrowRight': case 'd': case 'D': move(0, 1); break;
+      case 'z': case 'Z': undo(); break;
+      case 'r': case 'R': restart(); break;
+      default: handled = false;
+    }
+    if (handled) e.preventDefault();
+  });
+
+  // Button handlers
+  document.getElementById('btn-undo').addEventListener('click', undo);
+  document.getElementById('btn-restart').addEventListener('click', restart);
+  document.getElementById('btn-prev').addEventListener('click', prevLevel);
+  document.getElementById('btn-next').addEventListener('click', nextLevel);
+
+  // Mobile d-pad
+  document.querySelectorAll('.dpad-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      switch (btn.getAttribute('data-dir')) {
+        case 'up':    move(-1, 0); break;
+        case 'down':  move(1, 0); break;
+        case 'left':  move(0, -1); break;
+        case 'right': move(0, 1); break;
+      }
+    });
+  });
+
+  // Load saved progress
+  try {
+    var saved = JSON.parse(localStorage.getItem('sokoban_completed') || '{}');
+    for (var k in saved) completed[k] = saved[k];
+  } catch (e) {}
+
+  // Save progress on win
+  var origCompleted = completed;
+  Object.defineProperty(window, '_saveProgress', {
+    value: function () {
+      try { localStorage.setItem('sokoban_completed', JSON.stringify(completed)); } catch (e) {}
+    }
+  });
+
+  // Override checkWin path to save
+  var origMove = move;
+
+  // Init
+  buildLevelButtons();
+  loadLevel(0);
+
+  // Patch: save progress when level is completed
+  var _origCheckWin = checkWin;
+  var renderOrig = render;
+
+  // Use MutationObserver on message to detect completion and save
+  var observer = new MutationObserver(function () {
+    if (won) {
+      try { localStorage.setItem('sokoban_completed', JSON.stringify(completed)); } catch (e) {}
+    }
+  });
+  observer.observe(messageEl, { childList: true, characterData: true, subtree: true });
+
+})();
+</script>
+</body>
+</html>
