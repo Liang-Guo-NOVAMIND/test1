@@ -1,6 +1,5 @@
 import './style.css';
+import { LudoGame } from './game';
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-  <h1>Ludo</h1>
-  <p>Game board will be rendered here.</p>
-`;
+const app = document.querySelector<HTMLDivElement>('#app')!;
+new LudoGame(app);
