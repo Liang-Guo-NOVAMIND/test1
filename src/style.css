@@ -319,3 +319,72 @@ body {
 .rank-row:first-child .rank-pos {
   color: #f9a825;
 }
+
+.game-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 20px;
+  margin-bottom: 12px;
+  font-size: 1em;
+  background: #f5f5f5;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.game-card:hover {
+  border-color: #1e88e5;
+  background: #e3f2fd;
+}
+
+.game-card-name {
+  font-size: 1.3em;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.game-card-desc {
+  font-size: 0.9em;
+  color: #757575;
+  margin-top: 4px;
+}
+
+.gomoku-difficulty {
+  margin-bottom: 16px;
+}
+
+.gomoku-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 2px solid #f5f5f5;
+}
+
+.gomoku-info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95em;
+}
+
+.gomoku-stone-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.gomoku-stone-icon.black {
+  background: radial-gradient(circle at 35% 35%, #555, #111);
+  border: 1px solid #000;
+}
+
+.gomoku-stone-icon.white {
+  background: radial-gradient(circle at 35% 35%, #fff, #ccc);
+  border: 1px solid #888;
+}
