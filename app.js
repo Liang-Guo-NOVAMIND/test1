@@ -2,7 +2,7 @@ import {
   PLAYERS, PLAYER_LABELS, PIECES_PER_PLAYER,
   createInitialState, rollDice, getPieceCoords,
   getMovablePieces, computeMove, applyMove,
-  getColorForPlayer, getHomePositions,
+  getColorForPlayer, getHomePositions, nextPlayer,
 } from './game-engine.js';
 
 import {
@@ -12,11 +12,20 @@ import {
 
 const STEP_DURATION = 120;
 const DICE_ROLL_DURATION = 600;
+const AI_DELAY = 400;
 
 let state = createInitialState();
 let svg = null;
 let pieceElements = [];
+let gameMode = 'local';
+let humanPlayer = 0;
+let animating = false;
 
+const startScreen = document.getElementById('start-screen');
+const gameScreen = document.getElementById('game-screen');
+const modeLocalBtn = document.getElementById('mode-local');
+const modeAiBtn = document.getElementById('mode-ai');
+const backBtn = document.getElementById('back-btn');
 const boardContainer = document.getElementById('board-container');
 const diceBtn = document.getElementById('dice-btn');
 const diceDisplay = document.getElementById('dice-display');
@@ -27,9 +36,19 @@ const winnerOverlay = document.getElementById('winner-overlay');
 const winnerTitle = document.getElementById('winner-title');
 const winnerDot = document.getElementById('winner-dot');
 const restartBtn = document.getElementById('restart-btn');
+const menuBtn = document.getElementById('menu-btn');
 
-function init() {
-  state = createInitialState();
+function startGame(mode) {
+  gameMode = mode;
+  humanPlayer = 0;
+  const playerCount = mode === 'local' ? 2 : 2;
+  startScreen.classList.add('hidden');
+  gameScreen.classList.remove('hidden');
+  initGame(playerCount);
+}
+
+function initGame(playerCount) {
+  state = createInitialState(playerCount);
   if (svg) svg.remove();
   svg = createBoardSVG(boardContainer);
   pieceElements = createPieceElements(svg, state);
@@ -39,6 +58,17 @@ function init() {
   winnerOverlay.classList.remove('active');
   diceDisplay.textContent = '?';
   diceDisplay.classList.remove('rolling');
+  animating = false;
+}
+
+function returnToMenu() {
+  winnerOverlay.classList.remove('active');
+  gameScreen.classList.add('hidden');
+  startScreen.classList.remove('hidden');
+}
+
+function isAiTurn() {
+  return gameMode === 'ai' && state.currentPlayer !== humanPlayer;
 }
 
 function attachPieceListeners() {
@@ -72,6 +102,11 @@ function updateHUD() {
     diceBtn.disabled = false;
     diceBtn.textContent = 'Roll Dice';
     disableAllPieces();
+    if (isAiTurn()) {
+      diceBtn.disabled = true;
+      gameMessage.textContent = `${PLAYER_LABELS[p]} (AI) is thinking...`;
+      setTimeout(() => aiRoll(), AI_DELAY);
+    }
   } else if (state.phase === 'move') {
     const movable = getMovablePieces(state);
     if (movable.length === 0) {
@@ -79,6 +114,11 @@ function updateHUD() {
       diceBtn.disabled = true;
       disableAllPieces();
       setTimeout(() => skipTurn(), 800);
+    } else if (isAiTurn()) {
+      gameMessage.textContent = `${PLAYER_LABELS[p]} (AI) is moving...`;
+      diceBtn.disabled = true;
+      disableAllPieces();
+      setTimeout(() => aiMove(), AI_DELAY);
     } else {
       gameMessage.textContent = `Rolled ${state.diceValue} — select a piece`;
       diceBtn.disabled = true;
@@ -111,7 +151,7 @@ function highlightMovablePieces() {
 
 function skipTurn() {
   state.diceValue = null;
-  state.currentPlayer = (state.currentPlayer + 1) % 4;
+  state.currentPlayer = nextPlayer(state);
   state.phase = 'roll';
   diceDisplay.textContent = '?';
   updateHUD();
@@ -121,7 +161,7 @@ function skipTurn() {
 diceBtn.addEventListener('click', onDiceClick);
 
 function onDiceClick() {
-  if (state.phase !== 'roll') return;
+  if (state.phase !== 'roll' || isAiTurn()) return;
   const value = rollDice();
   state.phase = 'animating';
   diceBtn.disabled = true;
@@ -131,6 +171,41 @@ function onDiceClick() {
     state.phase = 'move';
     updateHUD();
   });
+}
+
+function aiRoll() {
+  if (state.phase !== 'roll') return;
+  const value = rollDice();
+  state.phase = 'animating';
+  updateHUD();
+  animateDiceRoll(value, () => {
+    state.diceValue = value;
+    state.phase = 'move';
+    updateHUD();
+  });
+}
+
+function aiMove() {
+  const movable = getMovablePieces(state);
+  if (movable.length === 0) return;
+  const bestIdx = aiPickPiece(movable);
+  executePieceMove(bestIdx);
+}
+
+function aiPickPiece(movable) {
+  for (const idx of movable) {
+    const result = computeMove(state, idx);
+    if (result.kicked >= 0) return idx;
+  }
+  for (const idx of movable) {
+    const result = computeMove(state, idx);
+    if (result.finished) return idx;
+  }
+  for (const idx of movable) {
+    const piece = state.pieces[idx];
+    if (piece.zone === 'home') return idx;
+  }
+  return movable[Math.floor(Math.random() * movable.length)];
 }
 
 function animateDiceRoll(finalValue, onComplete) {
@@ -157,12 +232,15 @@ function animateDiceRoll(finalValue, onComplete) {
 
 // Piece movement
 function onPieceClick(idx) {
-  if (state.phase !== 'move') return;
+  if (state.phase !== 'move' || isAiTurn()) return;
   const piece = state.pieces[idx];
   if (piece.player !== state.currentPlayer) return;
   const movable = getMovablePieces(state);
   if (!movable.includes(idx)) return;
+  executePieceMove(idx);
+}
 
+function executePieceMove(idx) {
   state.phase = 'animating';
   updateHUD();
 
@@ -277,13 +355,23 @@ function showWinner() {
   winnerOverlay.classList.add('active');
 }
 
+// Event listeners
+modeLocalBtn.addEventListener('click', () => startGame('local'));
+modeAiBtn.addEventListener('click', () => startGame('ai'));
+backBtn.addEventListener('click', returnToMenu);
+menuBtn.addEventListener('click', returnToMenu);
+
 restartBtn.addEventListener('click', () => {
-  init();
+  initGame(state.playerCount);
 });
 
 winnerOverlay.addEventListener('click', (e) => {
-  if (e.target === winnerOverlay) init();
+  if (e.target === winnerOverlay) initGame(state.playerCount);
 });
 
-// Start
-init();
+window.addEventListener('__ludo_test_win', (e) => {
+  const player = e.detail?.player ?? 0;
+  state.winner = player;
+  state.phase = 'won';
+  updateHUD();
+});

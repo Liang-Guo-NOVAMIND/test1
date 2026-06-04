@@ -62,9 +62,10 @@ const SAFE_CELLS = new Set([
 ]);
 export function isSafeCell(pos) { return SAFE_CELLS.has(pos); }
 
-export function createInitialState() {
+export function createInitialState(playerCount = 4) {
+  const activePlayers = getActivePlayers(playerCount);
   const pieces = [];
-  for (let p = 0; p < 4; p++) {
+  for (const p of activePlayers) {
     for (let i = 0; i < PIECES_PER_PLAYER; i++) {
       pieces.push({
         player: p,
@@ -76,12 +77,26 @@ export function createInitialState() {
     }
   }
   return {
-    currentPlayer: 0,
+    currentPlayer: activePlayers[0],
     diceValue: null,
     phase: 'roll',
     pieces,
     winner: -1,
+    playerCount,
+    activePlayers,
   };
+}
+
+export function getActivePlayers(playerCount = 4) {
+  if (playerCount === 2) return [0, 2];
+  if (playerCount === 3) return [0, 1, 2];
+  return [0, 1, 2, 3];
+}
+
+export function nextPlayer(state) {
+  const { activePlayers, currentPlayer } = state;
+  const idx = activePlayers.indexOf(currentPlayer);
+  return activePlayers[(idx + 1) % activePlayers.length];
 }
 
 export function rollDice() {
@@ -241,7 +256,7 @@ export function applyMove(state, pieceIdx, moveResult) {
   if (rolledSix) {
     state.phase = 'roll';
   } else {
-    state.currentPlayer = (state.currentPlayer + 1) % 4;
+    state.currentPlayer = nextPlayer(state);
     state.phase = 'roll';
   }
 }
