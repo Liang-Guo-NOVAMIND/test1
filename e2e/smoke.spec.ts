@@ -55,112 +55,97 @@ test.describe('Ludo Smoke Tests', () => {
     await page.click('#mode-local');
 
     for (let turn = 0; turn < 6; turn++) {
-      const phase = await page.evaluate(() => {
-        const el = document.getElementById('game-message');
-        return el?.textContent ?? '';
-      });
-      if (phase.includes('Roll the dice')) {
-        await page.click('#dice-btn');
-        await page.waitForTimeout(800);
-      }
+      // Wait for the dice button to become enabled (roll phase)
+      await page.waitForFunction(
+        () => {
+          const btn = document.getElementById('dice-btn') as HTMLButtonElement | null;
+          return btn && !btn.disabled;
+        },
+        { timeout: 10000 }
+      );
+
+      await page.click('#dice-btn');
+
+      // Wait for dice animation to finish and phase to resolve
+      await page.waitForFunction(
+        () => {
+          const btn = document.getElementById('dice-btn') as HTMLButtonElement | null;
+          const msg = document.getElementById('game-message')?.textContent ?? '';
+          return btn?.disabled && (
+            msg.includes('select a piece') ||
+            msg.includes('skipping') ||
+            msg.includes('Roll the dice')
+          );
+        },
+        { timeout: 10000 }
+      );
 
       const hasMovable = await page.evaluate(() => {
         return document.querySelectorAll('.piece-group.highlighted').length > 0;
       });
 
       if (hasMovable) {
-        const firstMovable = page.locator('.piece-group.highlighted').first();
-        await firstMovable.click();
-        await page.waitForTimeout(600);
-      } else {
-        await page.waitForTimeout(1000);
+        await page.locator('.piece-group.highlighted').first().click({ force: true });
+        // Wait for movement animation to complete
+        await page.waitForFunction(
+          () => {
+            const msg = document.getElementById('game-message')?.textContent ?? '';
+            return msg.includes('Roll the dice') || msg.includes('select a piece');
+          },
+          { timeout: 10000 }
+        );
       }
+      // If no movable pieces, the game auto-skips — loop will wait for dice enabled
     }
 
-    const boardVisible = await page.locator('#board-svg').isVisible();
-    expect(boardVisible).toBe(true);
+    expect(await page.locator('#board-svg').isVisible()).toBe(true);
   });
 
   test('trigger a win and verify restart resets the board', async ({ page }) => {
     await page.click('#mode-local');
     await page.waitForSelector('#board-svg');
 
-    await page.evaluate(() => {
-      const mod = window.__ludoTestHook;
-      if (mod) {
-        mod.forceWin(0);
-      }
-    });
+    // Play one turn to verify gameplay works
+    await page.waitForFunction(
+      () => !(document.getElementById('dice-btn') as HTMLButtonElement)?.disabled,
+      { timeout: 5000 }
+    );
+    await page.click('#dice-btn');
+    await page.waitForTimeout(800);
 
-    await page.evaluate(() => {
-      const gameModule = document.querySelector('script[type="module"]');
-      if (!gameModule) return;
-    });
+    // Wait for phase to settle
+    await page.waitForFunction(
+      () => {
+        const msg = document.getElementById('game-message')?.textContent ?? '';
+        return msg.includes('select') || msg.includes('skipping') || msg.includes('Roll');
+      },
+      { timeout: 5000 }
+    );
 
-    await page.evaluate(() => {
-      window.__ludoForceWin = true;
-    });
-
-    // Roll and play a few turns to verify the game functions
-    for (let i = 0; i < 3; i++) {
-      const diceEnabled = await page.evaluate(
-        () => !document.getElementById('dice-btn')?.disabled
-      );
-      if (diceEnabled) {
-        await page.click('#dice-btn');
-        await page.waitForTimeout(800);
-      }
-
-      const hasMovable = await page.evaluate(
-        () => document.querySelectorAll('.piece-group.highlighted').length > 0
-      );
-      if (hasMovable) {
-        await page.locator('.piece-group.highlighted').first().click();
-        await page.waitForTimeout(600);
-      } else {
-        await page.waitForTimeout(1000);
-      }
-    }
-
-    // Force a win via direct state manipulation
+    // Force a win via the test hook event
     await page.evaluate(() => {
       const event = new CustomEvent('__ludo_test_win', { detail: { player: 0 } });
       window.dispatchEvent(event);
     });
 
-    await page.waitForTimeout(500);
-
-    const overlayVisible = await page.evaluate(() => {
-      return document.getElementById('winner-overlay')?.classList.contains('active') ?? false;
-    });
-
-    if (!overlayVisible) {
-      // If event-based win didn't work, manipulate DOM directly to test restart flow
-      await page.evaluate(() => {
-        const overlay = document.getElementById('winner-overlay');
-        const title = document.getElementById('winner-title');
-        const dot = document.getElementById('winner-dot');
-        if (overlay && title && dot) {
-          title.textContent = 'Red Wins!';
-          dot.style.background = '#E53935';
-          overlay.classList.add('active');
-        }
-      });
-    }
+    // Wait for overlay to appear
+    await page.waitForFunction(
+      () => document.getElementById('winner-overlay')?.classList.contains('active'),
+      { timeout: 5000 }
+    );
 
     await expect(page.locator('#winner-overlay')).toHaveClass(/active/);
     await expect(page.locator('#winner-title')).toContainText('Wins');
 
     // Click restart
     await page.click('#restart-btn');
-    await page.waitForTimeout(500);
 
     // Verify board resets
     await expect(page.locator('#winner-overlay')).not.toHaveClass(/active/);
     await expect(page.locator('#dice-display')).toHaveText('?');
     await expect(page.locator('#board-svg')).toBeVisible();
     const piecesCount = await page.locator('.piece-group').count();
-    expect(piecesCount).toBe(8); // 2 players x 4 pieces
+    expect(piecesCount).toBe(8);
   });
 
   test('menu button from winner overlay returns to start', async ({ page }) => {
