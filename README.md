@@ -48,11 +48,56 @@ Open the URL shown in the terminal (usually http://localhost:5173).
 | `npm run lint`       | Lint TypeScript files with ESLint   |
 | `npm run format`     | Format source files with Prettier   |
 
+## Game Server
+
+The `server/` directory contains a Node.js backend with Express and Socket.IO that provides:
+
+- **Room management** — create, join, leave rooms for 2-4 players
+- **Authoritative game state** — server-side Ludo engine with dice rolling, piece movement validation, captures, bonus turns, three-sixes penalty, and win detection
+- **WebSocket sync** — real-time state broadcasts to all room participants
+- **REST API** — `GET /api/rooms` (list), `GET /api/rooms/:id` (details), `GET /api/health`
+
+### Starting the server
+
+```bash
+cd server
+npm install
+npm run dev      # development with auto-reload (default port 3001)
+npm start        # production start
+npm test         # run unit + integration tests
+```
+
+Set `PORT` environment variable to change the listening port (default: `3001`).
+
+### Socket.IO Events
+
+| Event (client → server) | Payload | Description |
+|---|---|---|
+| `room:create` | `{ playerName, roomName, maxPlayers? }` | Create a new room |
+| `room:join` | `{ roomId, playerName }` | Join an existing room |
+| `room:leave` | — | Leave the current room |
+| `rooms:list` | — | List all rooms |
+| `game:start` | — | Start the game (host only) |
+| `game:rollDice` | — | Roll the dice (current player) |
+| `game:movePiece` | `{ pieceIndex }` | Move a piece (current player) |
+
+| Event (server → client) | Description |
+|---|---|
+| `rooms:updated` | Room list changed |
+| `room:playerJoined` | A player joined the room |
+| `room:playerLeft` | A player left the room |
+| `room:closed` | Room was deleted |
+| `game:started` | Game began, includes initial snapshot |
+| `game:diceRolled` | Dice was rolled, includes new snapshot |
+| `game:pieceMoved` | Piece was moved, includes move result and snapshot |
+| `game:over` | Game finished, includes winner and rankings |
+
 ## Tech Stack
 
 - **Vite** - Build tool and dev server
 - **TypeScript** - Type-safe JavaScript
 - **HTML Canvas** - Board and piece rendering
+- **Express + Socket.IO** - Game server and real-time communication
 - **ESLint** - Linting
 - **Prettier** - Code formatting
 - **Vitest** - Unit testing

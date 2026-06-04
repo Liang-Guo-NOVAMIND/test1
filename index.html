@@ -1,12 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ludo</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ludo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="start-screen" role="main" aria-label="Game setup">
+    <h1 class="start-title">Ludo</h1>
+    <p class="start-subtitle">Classic board game for 2-4 players</p>
+    <div class="mode-selector">
+      <button id="mode-local" class="mode-btn" type="button" aria-label="Start Local Two Player game">
+        <span class="mode-icon" aria-hidden="true">&#x1F465;</span>
+        <span class="mode-label">Local Two Player</span>
+        <span class="mode-desc">Play with a friend on this device</span>
+      </button>
+      <button id="mode-ai" class="mode-btn" type="button" aria-label="Start Single Player versus AI game">
+        <span class="mode-icon" aria-hidden="true">&#x1F916;</span>
+        <span class="mode-label">Single Player vs AI</span>
+        <span class="mode-desc">Play against the computer</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="game-screen" class="hidden">
+    <header id="game-header">
+      <h1>Ludo</h1>
+      <button id="back-btn" type="button" aria-label="Return to start screen">Back</button>
+    </header>
+
+    <div id="hud" aria-live="polite">
+      <div class="turn-indicator">
+        <span id="player-dot" class="player-dot" aria-hidden="true"></span>
+        <span id="player-name">Red</span>
+      </div>
+      <span id="game-message">Roll the dice to move</span>
+      <div id="dice-area">
+        <button id="dice-btn" type="button" aria-label="Roll dice">Roll Dice</button>
+        <div id="dice-display" role="status" aria-live="polite" aria-label="Dice result">?</div>
+      </div>
+    </div>
+
+    <div id="board-container" role="region" aria-label="Game board"></div>
+
+    <div id="winner-overlay" role="dialog" aria-modal="true" aria-label="Game over">
+      <div id="winner-modal">
+        <h2>
+          <span id="winner-dot" class="player-dot" style="display:inline-block;vertical-align:middle;margin-right:8px;width:24px;height:24px;" aria-hidden="true"></span>
+          <span id="winner-title">Red Wins!</span>
+        </h2>
+        <p>Congratulations! All pieces reached home.</p>
+        <div class="winner-actions">
+          <button id="restart-btn" type="button" aria-label="Play again">Play Again</button>
+          <button id="menu-btn" type="button" aria-label="Return to main menu">Main Menu</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
 </html>
