@@ -26,85 +26,154 @@ body {
   max-width: 1000px;
 }
 
-.setup-screen {
-  background: #fff;
-  border-radius: 16px;
-  padding: 40px;
-  max-width: 420px;
-  margin: 60px auto;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
-  text-align: center;
+/* App header */
+.app-root {
+  width: 100%;
 }
 
-.game-title {
-  font-size: 2.5em;
-  margin-bottom: 0;
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 0 4px;
+}
+
+.app-title {
+  font-size: 1.8em;
   color: #1a1a1a;
 }
 
-.game-subtitle {
-  color: #757575;
-  margin-bottom: 32px;
-}
-
-.setup-label {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #424242;
-  text-align: left;
-}
-
-.player-count-select {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
-}
-
-.count-btn {
-  flex: 1;
-  padding: 10px;
-  font-size: 1.1em;
-  font-weight: 600;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  background: #fff;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.count-btn:hover {
-  border-color: #90a4ae;
-}
-
-.count-btn.active {
-  background: #1e88e5;
-  color: #fff;
-  border-color: #1e88e5;
-}
-
-.names-container {
-  margin-bottom: 24px;
-}
-
-.name-row {
+.connection-status {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 6px;
+  font-size: 0.9em;
+  color: #757575;
 }
 
-.color-dot {
-  width: 16px;
-  height: 16px;
+.status-dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   display: inline-block;
-  flex-shrink: 0;
 }
 
-.name-input {
-  flex: 1;
-  padding: 8px 12px;
+.status-dot.connected {
+  background: #43a047;
+}
+
+.status-dot.disconnected {
+  background: #e53935;
+}
+
+.error-toast {
+  background: #ffebee;
+  color: #c62828;
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Buttons */
+.btn {
+  padding: 10px 20px;
+  font-size: 1em;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-block;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #1e88e5;
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+.btn-secondary {
+  background: #43a047;
+  color: #fff;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #388e3c;
+}
+
+.btn-outline {
+  background: transparent;
+  color: #616161;
+  border: 2px solid #e0e0e0;
+}
+
+.btn-outline:hover:not(:disabled) {
+  border-color: #90a4ae;
+  background: #fafafa;
+}
+
+.btn-text {
+  background: transparent;
+  color: #1e88e5;
+  padding: 6px 12px;
+}
+
+.btn-text:hover:not(:disabled) {
+  background: #e3f2fd;
+}
+
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 0.9em;
+}
+
+/* Lobby */
+.lobby {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.lobby-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+}
+
+.lobby-card h2 {
+  margin-bottom: 20px;
+  color: #1a1a1a;
+}
+
+.lobby-form {
+  margin-bottom: 16px;
+}
+
+.lobby-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #424242;
+  font-size: 0.9em;
+}
+
+.lobby-input {
+  width: 100%;
+  padding: 10px 14px;
   font-size: 1em;
   border: 2px solid #e0e0e0;
   border-radius: 8px;
@@ -112,27 +181,175 @@ body {
   transition: border-color 0.2s;
 }
 
-.name-input:focus {
+.lobby-input:focus {
   border-color: #1e88e5;
 }
 
-.start-btn {
-  width: 100%;
-  padding: 12px;
-  font-size: 1.1em;
+.lobby-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lobby-divider {
+  text-align: center;
+  color: #9e9e9e;
+  font-size: 0.85em;
+}
+
+.join-by-code {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.code-input {
+  max-width: 120px;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+/* Room list */
+.room-list-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+}
+
+.room-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.room-list-header h3 {
+  color: #1a1a1a;
+}
+
+.room-list-empty {
+  color: #9e9e9e;
+  text-align: center;
+  padding: 20px;
+}
+
+.room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.room-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #fafafa;
+  border-radius: 10px;
+  border: 1px solid #eee;
+}
+
+.room-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.room-name-text {
   font-weight: 600;
-  background: #43a047;
-  color: #fff;
-  border: none;
+  color: #1a1a1a;
+}
+
+.room-meta {
+  font-size: 0.8em;
+  color: #9e9e9e;
+}
+
+/* Waiting room */
+.waiting-room {
+  display: flex;
+  justify-content: center;
+}
+
+.waiting-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 460px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.waiting-card h2 {
+  margin-bottom: 8px;
+}
+
+.room-code {
+  font-size: 1.2em;
+  color: #424242;
+  margin-bottom: 4px;
+}
+
+.room-code strong {
+  color: #1e88e5;
+  letter-spacing: 2px;
+  font-size: 1.3em;
+}
+
+.waiting-hint {
+  color: #9e9e9e;
+  font-size: 0.9em;
+  margin-bottom: 20px;
+}
+
+.player-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+  text-align: left;
+}
+
+.player-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fafafa;
   border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.2s;
+  border: 1px solid #eee;
 }
 
-.start-btn:hover {
-  background: #388e3c;
+.player-slot.empty {
+  opacity: 0.5;
+  border-style: dashed;
 }
 
+.slot-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.empty-color {
+  background: #e0e0e0;
+}
+
+.slot-name {
+  font-weight: 500;
+}
+
+.waiting-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Game layout */
 .game-layout {
   display: flex;
   gap: 24px;
@@ -264,6 +481,15 @@ body {
   height: auto;
 }
 
+.color-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Game over overlay */
 .gameover-overlay {
   position: fixed;
   top: 0;
