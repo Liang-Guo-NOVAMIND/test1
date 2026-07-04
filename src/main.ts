@@ -1,5 +1,5 @@
 import './style.css';
-import { LudoGame } from './game';
+import { ParkourGame } from './game';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
-new LudoGame(app);
+new ParkourGame(app);

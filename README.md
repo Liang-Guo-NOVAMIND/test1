@@ -92,6 +92,29 @@ Set `PORT` environment variable to change the listening port (default: `3001`).
 | `game:pieceMoved` | Piece was moved, includes move result and snapshot |
 | `game:over` | Game finished, includes winner and rankings |
 
+## Parkour Runner (跑酷小游戏)
+
+A side-scrolling parkour mini-game built with HTML5 Canvas and TypeScript.
+
+### How to Play
+
+1. Start the dev server: `npm run dev`
+2. Open http://localhost:5173/parkour/ in your browser
+3. Press **Space** or **Up Arrow** to jump, **Down Arrow** to duck
+4. Collect gold coins for bonus points and shields to block obstacles
+5. Avoid crates, spikes, and birds — the game speeds up over time!
+
+### Features
+
+- Auto-scrolling runner with progressive difficulty
+- Jump and duck controls (keyboard + touch/click)
+- Three obstacle types: crates, spikes, flying birds
+- Collectible items: coins (bonus score) and shields (temporary invincibility)
+- Particle effects on collection and collision
+- Start screen with instructions
+- Game over screen with score and high score
+- Parallax scrolling background
+
 ## Tech Stack
 
 - **Vite** - Build tool and dev server
