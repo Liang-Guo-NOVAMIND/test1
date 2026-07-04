@@ -1,478 +1,310 @@
+import { GameState } from './types';
+import type { Player, Obstacle, Collectible } from './types';
+import { CONFIG } from './config';
+import { createPlayer, updatePlayer, jump, slide } from './player';
+import { createObstacle, updateObstacle, isObstacleOffScreen } from './obstacles';
+import { createCollectible, updateCollectible, isCollectibleOffScreen, getCollectibleScore } from './collectibles';
+import { checkPlayerObstacleCollision, checkPlayerCollectibleCollision } from './collision';
 import {
-  GameState,
-  PlayerColor,
-  PLAYER_COLORS,
-  COLOR_HEX,
-} from './types';
-import {
-  createGameState,
-  rollDice,
-  applyMove,
-  getMovablePieces,
-  hasAnyMove,
-  skipTurn,
-  computeMove,
-} from './engine';
-import {
-  renderLoop,
-  getClickedPiece,
-  startAnimation,
-  isAnimating,
-  cancelAnimation,
-  getPiecePixel,
-  positionToPixel,
+  clearCanvas,
+  drawBackground,
+  drawPlayer,
+  drawObstacle,
+  drawCollectible,
+  drawHUD,
 } from './renderer';
-import { drawDice, createDiceAnimation, tickDiceAnimation, DiceAnimation } from './dice';
-import { BOARD_SIZE } from './board-layout';
 
-export class LudoGame {
+export class ParkourGame {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private diceCanvas: HTMLCanvasElement;
-  private diceCtx: CanvasRenderingContext2D;
-  private state: GameState;
-  private highlightedPieces = new Set<string>();
   private container: HTMLElement;
-  private statusEl: HTMLElement;
-  private diceBtn: HTMLButtonElement;
-  private diceAnim: DiceAnimation | null = null;
-  private diceAnimInterval: ReturnType<typeof setInterval> | null = null;
-  private displayDiceValue: number = 1;
-  private messageEl: HTMLElement;
+
+  private state: GameState = GameState.Start;
+  private player: Player = createPlayer();
+  private obstacles: Obstacle[] = [];
+  private collectibles: Collectible[] = [];
+  private score = 0;
+  private distance = 0;
+  private highScore = 0;
+  private speed = CONFIG.baseSpeed;
+  private frameCount = 0;
+  private nextObstacleFrame = 0;
+  private nextCollectibleFrame = 0;
+  private backgroundOffset = 0;
+  private animFrameId: number | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
-    this.state = createGameState(['red', 'green'], ['Player 1', 'Player 2']);
     this.canvas = document.createElement('canvas');
-    this.diceCanvas = document.createElement('canvas');
+    this.canvas.width = CONFIG.canvasWidth;
+    this.canvas.height = CONFIG.canvasHeight;
+    this.canvas.id = 'game-canvas';
     this.ctx = this.canvas.getContext('2d')!;
-    this.diceCtx = this.diceCanvas.getContext('2d')!;
-    this.statusEl = document.createElement('div');
-    this.diceBtn = document.createElement('button');
-    this.messageEl = document.createElement('div');
-    this.showSetupScreen();
+
+    const saved = localStorage.getItem('parkour-highscore');
+    if (saved) this.highScore = parseInt(saved, 10) || 0;
+
+    this.buildUI();
+    this.bindInput();
+    this.showStartScreen();
   }
 
-  private showSetupScreen(): void {
+  private buildUI(): void {
     this.container.innerHTML = '';
 
-    const setup = document.createElement('div');
-    setup.className = 'setup-screen';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'game-wrapper';
 
     const title = document.createElement('h1');
-    title.textContent = 'Ludo';
     title.className = 'game-title';
-    setup.appendChild(title);
+    title.textContent = 'Parkour Runner';
+    wrapper.appendChild(title);
 
-    const subtitle = document.createElement('p');
-    subtitle.textContent = 'Local Multiplayer Board Game';
-    subtitle.className = 'game-subtitle';
-    setup.appendChild(subtitle);
+    const canvasWrap = document.createElement('div');
+    canvasWrap.className = 'canvas-wrap';
+    canvasWrap.appendChild(this.canvas);
+    wrapper.appendChild(canvasWrap);
 
-    const playerCountLabel = document.createElement('label');
-    playerCountLabel.textContent = 'Number of Players';
-    playerCountLabel.className = 'setup-label';
-    setup.appendChild(playerCountLabel);
+    const controls = document.createElement('div');
+    controls.className = 'controls-info';
+    controls.innerHTML = `
+      <span><kbd>Space</kbd> / <kbd>↑</kbd> / <kbd>W</kbd> Jump</span>
+      <span><kbd>↓</kbd> / <kbd>S</kbd> Slide</span>
+      <span>Tap/Click to Jump</span>
+    `;
+    wrapper.appendChild(controls);
 
-    const playerCountSelect = document.createElement('div');
-    playerCountSelect.className = 'player-count-select';
-    let selectedCount = 2;
+    this.container.appendChild(wrapper);
+  }
 
-    for (let n = 2; n <= 4; n++) {
-      const btn = document.createElement('button');
-      btn.textContent = `${n}`;
-      btn.className = 'count-btn' + (n === 2 ? ' active' : '');
-      btn.addEventListener('click', () => {
-        selectedCount = n;
-        playerCountSelect
-          .querySelectorAll('.count-btn')
-          .forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        updateNameInputs();
-      });
-      playerCountSelect.appendChild(btn);
-    }
-    setup.appendChild(playerCountSelect);
+  private bindInput(): void {
+    document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+    this.canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+  }
 
-    const namesContainer = document.createElement('div');
-    namesContainer.className = 'names-container';
-    setup.appendChild(namesContainer);
-
-    const colorLabels: Record<PlayerColor, string> = {
-      red: 'Red',
-      green: 'Green',
-      yellow: 'Yellow',
-      blue: 'Blue',
-    };
-
-    function updateNameInputs(): void {
-      namesContainer.innerHTML = '';
-      for (let i = 0; i < selectedCount; i++) {
-        const color = PLAYER_COLORS[i]!;
-        const row = document.createElement('div');
-        row.className = 'name-row';
-
-        const dot = document.createElement('span');
-        dot.className = 'color-dot';
-        dot.style.background = COLOR_HEX[color];
-        row.appendChild(dot);
-
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = `${colorLabels[color]} Player`;
-        input.value = `Player ${i + 1}`;
-        input.className = 'name-input';
-        input.id = `player-name-${i}`;
-        row.appendChild(input);
-
-        namesContainer.appendChild(row);
+  private handleKeyDown(e: KeyboardEvent): void {
+    if (this.state === GameState.Start) {
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        this.startGame();
       }
-    }
-    updateNameInputs();
-
-    const startBtn = document.createElement('button');
-    startBtn.textContent = 'Start Game';
-    startBtn.className = 'start-btn';
-    startBtn.addEventListener('click', () => {
-      const colors = PLAYER_COLORS.slice(0, selectedCount);
-      const names = colors.map((_, i) => {
-        const input = document.getElementById(
-          `player-name-${i}`
-        ) as HTMLInputElement;
-        return input.value.trim() || `Player ${i + 1}`;
-      });
-      this.startGame(colors, names);
-    });
-    setup.appendChild(startBtn);
-
-    this.container.appendChild(setup);
-  }
-
-  private startGame(colors: PlayerColor[], names: string[]): void {
-    this.state = createGameState(colors, names);
-    this.highlightedPieces.clear();
-    cancelAnimation();
-    this.buildGameUI();
-    this.updateUI();
-
-    renderLoop(
-      this.ctx,
-      () => this.state,
-      () => this.highlightedPieces
-    );
-  }
-
-  private buildGameUI(): void {
-    this.container.innerHTML = '';
-
-    const layout = document.createElement('div');
-    layout.className = 'game-layout';
-
-    const sidebar = document.createElement('div');
-    sidebar.className = 'sidebar';
-
-    this.statusEl = document.createElement('div');
-    this.statusEl.className = 'status';
-    sidebar.appendChild(this.statusEl);
-
-    const diceArea = document.createElement('div');
-    diceArea.className = 'dice-area';
-
-    this.diceCanvas.width = 80;
-    this.diceCanvas.height = 80;
-    this.diceCanvas.className = 'dice-canvas';
-    diceArea.appendChild(this.diceCanvas);
-
-    this.diceBtn = document.createElement('button');
-    this.diceBtn.textContent = 'Roll Dice';
-    this.diceBtn.className = 'dice-btn';
-    this.diceBtn.addEventListener('click', () => this.onRollDice());
-    diceArea.appendChild(this.diceBtn);
-
-    sidebar.appendChild(diceArea);
-
-    this.messageEl = document.createElement('div');
-    this.messageEl.className = 'message';
-    sidebar.appendChild(this.messageEl);
-
-    const playerList = document.createElement('div');
-    playerList.className = 'player-list';
-    for (const player of this.state.players) {
-      const row = document.createElement('div');
-      row.className = 'player-row';
-      row.id = `player-row-${player.color}`;
-
-      const dot = document.createElement('span');
-      dot.className = 'color-dot';
-      dot.style.background = COLOR_HEX[player.color];
-      row.appendChild(dot);
-
-      const name = document.createElement('span');
-      name.className = 'player-name';
-      name.textContent = player.name;
-      row.appendChild(name);
-
-      const score = document.createElement('span');
-      score.className = 'player-score';
-      score.id = `score-${player.color}`;
-      row.appendChild(score);
-
-      playerList.appendChild(row);
-    }
-    sidebar.appendChild(playerList);
-
-    const newGameBtn = document.createElement('button');
-    newGameBtn.textContent = 'New Game';
-    newGameBtn.className = 'new-game-btn';
-    newGameBtn.addEventListener('click', () => {
-      cancelAnimation();
-      this.showSetupScreen();
-    });
-    sidebar.appendChild(newGameBtn);
-
-    layout.appendChild(sidebar);
-
-    const boardWrap = document.createElement('div');
-    boardWrap.className = 'board-wrap';
-
-    this.canvas.width = BOARD_SIZE;
-    this.canvas.height = BOARD_SIZE;
-    this.canvas.className = 'board-canvas';
-    this.canvas.addEventListener('click', (e) => this.onCanvasClick(e));
-    boardWrap.appendChild(this.canvas);
-
-    layout.appendChild(boardWrap);
-
-    this.container.appendChild(layout);
-
-    this.drawDiceDisplay(1);
-  }
-
-  private drawDiceDisplay(value: number): void {
-    this.diceCtx.clearRect(0, 0, 80, 80);
-    drawDice(this.diceCtx, value, 10, 10, 60);
-  }
-
-  private onRollDice(): void {
-    if (this.state.phase !== 'rolling') return;
-    if (this.state.diceRolled) return;
-    if (isAnimating()) return;
-
-    const value = rollDice();
-    this.diceBtn.disabled = true;
-
-    this.diceAnim = createDiceAnimation(value, (finalValue) => {
-      this.diceAnimDone(finalValue);
-    });
-
-    if (this.diceAnimInterval) clearInterval(this.diceAnimInterval);
-    this.diceAnimInterval = setInterval(() => {
-      if (!this.diceAnim) return;
-      const v = tickDiceAnimation(this.diceAnim);
-      if (v !== null) {
-        this.displayDiceValue = v;
-        this.drawDiceDisplay(v);
-      } else {
-        if (this.diceAnimInterval) clearInterval(this.diceAnimInterval);
-        this.diceAnimInterval = null;
-        this.diceAnim = null;
-      }
-    }, 60);
-  }
-
-  private diceAnimDone(value: number): void {
-    this.state = {
-      ...this.state,
-      diceValue: value,
-      diceRolled: true,
-      phase: 'moving',
-    };
-
-    this.displayDiceValue = value;
-    this.drawDiceDisplay(value);
-
-    if (!hasAnyMove(this.state)) {
-      this.showMessage('No valid moves. Turn skipped.');
-      setTimeout(() => {
-        this.state = skipTurn(this.state);
-        this.clearMessage();
-        this.updateUI();
-      }, 1200);
       return;
     }
 
-    const movable = getMovablePieces(this.state);
-    this.highlightedPieces.clear();
-    for (const p of movable) {
-      this.highlightedPieces.add(p.id);
+    if (this.state === GameState.GameOver) {
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        this.showStartScreen();
+      }
+      return;
     }
 
-    if (movable.length === 1) {
-      this.movePiece(movable[0]!.id);
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+      e.preventDefault();
+      jump(this.player);
+    } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+      e.preventDefault();
+      slide(this.player);
+    }
+  }
+
+  private handlePointerDown(e: PointerEvent): void {
+    e.preventDefault();
+    if (this.state === GameState.Start) {
+      this.startGame();
+      return;
+    }
+    if (this.state === GameState.GameOver) {
+      this.showStartScreen();
+      return;
+    }
+
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const clickY = e.clientY - canvasRect.top;
+    const halfHeight = canvasRect.height / 2;
+
+    if (clickY < halfHeight) {
+      jump(this.player);
     } else {
-      this.showMessage('Select a piece to move');
-      this.diceBtn.disabled = true;
-    }
-
-    this.updateUI();
-  }
-
-  private onCanvasClick(e: MouseEvent): void {
-    if (this.state.phase !== 'moving') return;
-    if (isAnimating()) return;
-
-    const rect = this.canvas.getBoundingClientRect();
-    const scaleX = this.canvas.width / rect.width;
-    const scaleY = this.canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-
-    const piece = getClickedPiece(this.state, x, y);
-    if (piece) {
-      this.movePiece(piece.id);
+      slide(this.player);
     }
   }
 
-  private movePiece(pieceId: string): void {
-    this.highlightedPieces.clear();
-    this.clearMessage();
+  private showStartScreen(): void {
+    this.state = GameState.Start;
+    if (this.animFrameId !== null) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
+    this.drawStartScreen();
+  }
 
-    const player = this.state.players[this.state.currentPlayerIndex]!;
-    const piece = player.pieces.find((p) => p.id === pieceId);
-    if (!piece || this.state.diceValue === null) return;
+  private drawStartScreen(): void {
+    const ctx = this.ctx;
+    clearCanvas(ctx);
+    drawBackground(ctx, 0);
 
-    const moveResult = computeMove(piece, this.state.diceValue, this.state);
-    const startPos = getPiecePixel(piece);
-    const pathPixels = moveResult.path.map((pos) =>
-      positionToPixel(piece.color, pos, piece.index)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Parkour Runner', CONFIG.canvasWidth / 2, CONFIG.canvasHeight / 2 - 60);
+
+    ctx.font = '20px sans-serif';
+    ctx.fillStyle = '#E0E0E0';
+    ctx.fillText('Jump over obstacles, collect items!', CONFIG.canvasWidth / 2, CONFIG.canvasHeight / 2 - 10);
+
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText('Press SPACE or Click to Start', CONFIG.canvasWidth / 2, CONFIG.canvasHeight / 2 + 50);
+
+    if (this.highScore > 0) {
+      ctx.font = '16px sans-serif';
+      ctx.fillStyle = '#FFD700';
+      ctx.fillText(`High Score: ${this.highScore}`, CONFIG.canvasWidth / 2, CONFIG.canvasHeight / 2 + 90);
+    }
+  }
+
+  private startGame(): void {
+    this.state = GameState.Playing;
+    this.player = createPlayer();
+    this.obstacles = [];
+    this.collectibles = [];
+    this.score = 0;
+    this.distance = 0;
+    this.speed = CONFIG.baseSpeed;
+    this.frameCount = 0;
+    this.backgroundOffset = 0;
+    this.nextObstacleFrame = 60;
+    this.nextCollectibleFrame = 100;
+
+    this.gameLoop();
+  }
+
+  private gameLoop(): void {
+    if (this.state !== GameState.Playing) return;
+
+    this.update();
+    this.render();
+
+    this.animFrameId = requestAnimationFrame(() => this.gameLoop());
+  }
+
+  private update(): void {
+    this.frameCount++;
+    this.distance += this.speed * 0.1;
+    this.backgroundOffset += this.speed;
+
+    if (this.speed < CONFIG.maxSpeed) {
+      this.speed += CONFIG.speedIncrement;
+    }
+
+    updatePlayer(this.player);
+
+    if (this.frameCount >= this.nextObstacleFrame) {
+      this.obstacles.push(createObstacle(this.speed));
+      const interval = CONFIG.obstacleMinInterval +
+        Math.random() * (CONFIG.obstacleMaxInterval - CONFIG.obstacleMinInterval);
+      this.nextObstacleFrame = this.frameCount + Math.floor(interval * (CONFIG.baseSpeed / this.speed));
+    }
+
+    if (this.frameCount >= this.nextCollectibleFrame) {
+      this.collectibles.push(createCollectible());
+      const interval = CONFIG.collectibleMinInterval +
+        Math.random() * (CONFIG.collectibleMaxInterval - CONFIG.collectibleMinInterval);
+      this.nextCollectibleFrame = this.frameCount + Math.floor(interval);
+    }
+
+    for (const obstacle of this.obstacles) {
+      updateObstacle(obstacle, this.speed);
+
+      if (!obstacle.passed && obstacle.x + obstacle.width < this.player.x) {
+        obstacle.passed = true;
+        this.score += 5;
+      }
+
+      if (checkPlayerObstacleCollision(this.player, obstacle)) {
+        this.gameOver();
+        return;
+      }
+    }
+
+    for (const collectible of this.collectibles) {
+      updateCollectible(collectible, this.speed);
+
+      if (!collectible.collected && checkPlayerCollectibleCollision(this.player, collectible)) {
+        collectible.collected = true;
+        this.score += getCollectibleScore(collectible.type);
+      }
+    }
+
+    this.obstacles = this.obstacles.filter((o) => !isObstacleOffScreen(o));
+    this.collectibles = this.collectibles.filter(
+      (c) => !isCollectibleOffScreen(c) && !c.collected
     );
-
-    const fullPath = [startPos, ...pathPixels];
-    void fullPath;
-
-    this.state = { ...this.state, animating: true };
-
-    startAnimation(
-      pieceId,
-      moveResult.path,
-      piece.color,
-      piece.index,
-      () => {
-        const result = applyMove(this.state, pieceId);
-        this.state = result.state;
-
-        if (result.moveResult.captured.length > 0) {
-          this.showMessage('Captured! Bonus turn!');
-          setTimeout(() => this.clearMessage(), 1500);
-        } else if (this.state.diceValue === null && this.state.consecutiveSixes > 0) {
-          // Rolled a six - gets another turn
-        }
-
-        if (this.state.phase === 'gameover') {
-          this.showGameOver();
-        }
-
-        this.updateUI();
-      }
-    );
   }
 
-  private updateUI(): void {
-    const current = this.state.players[this.state.currentPlayerIndex]!;
+  private render(): void {
+    const ctx = this.ctx;
+    clearCanvas(ctx);
+    drawBackground(ctx, this.backgroundOffset);
 
-    this.statusEl.innerHTML = '';
-    const turnDot = document.createElement('span');
-    turnDot.className = 'color-dot';
-    turnDot.style.background = COLOR_HEX[current.color];
-    this.statusEl.appendChild(turnDot);
-
-    const turnText = document.createElement('span');
-    turnText.textContent = `${current.name}'s Turn`;
-    this.statusEl.appendChild(turnText);
-
-    this.diceBtn.disabled =
-      this.state.phase !== 'rolling' || isAnimating();
-
-    for (const player of this.state.players) {
-      const row = document.getElementById(`player-row-${player.color}`);
-      if (row) {
-        row.classList.toggle(
-          'active',
-          player.color === current.color
-        );
-      }
-      const scoreEl = document.getElementById(`score-${player.color}`);
-      if (scoreEl) {
-        const home = player.pieces.filter(
-          (p) => p.position.type === 'won'
-        ).length;
-        scoreEl.textContent = home > 0 ? `${home}/4 home` : '';
-      }
+    for (const obstacle of this.obstacles) {
+      drawObstacle(ctx, obstacle);
     }
 
-    this.drawDiceDisplay(this.displayDiceValue);
-  }
-
-  private showMessage(msg: string): void {
-    this.messageEl.textContent = msg;
-  }
-
-  private clearMessage(): void {
-    this.messageEl.textContent = '';
-  }
-
-  private showGameOver(): void {
-    this.diceBtn.disabled = true;
-
-    const overlay = document.createElement('div');
-    overlay.className = 'gameover-overlay';
-
-    const modal = document.createElement('div');
-    modal.className = 'gameover-modal';
-
-    const title = document.createElement('h2');
-    title.textContent = 'Game Over!';
-    modal.appendChild(title);
-
-    const rankings = document.createElement('div');
-    rankings.className = 'rankings';
-
-    for (let i = 0; i < this.state.rankings.length; i++) {
-      const color = this.state.rankings[i]!;
-      const player = this.state.players.find((p) => p.color === color)!;
-      const row = document.createElement('div');
-      row.className = 'rank-row';
-
-      const medal = i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : '4th';
-      const pos = document.createElement('span');
-      pos.className = 'rank-pos';
-      pos.textContent = medal;
-      row.appendChild(pos);
-
-      const dot = document.createElement('span');
-      dot.className = 'color-dot';
-      dot.style.background = COLOR_HEX[color];
-      row.appendChild(dot);
-
-      const name = document.createElement('span');
-      name.textContent = player.name;
-      row.appendChild(name);
-
-      rankings.appendChild(row);
+    for (const collectible of this.collectibles) {
+      drawCollectible(ctx, collectible);
     }
-    modal.appendChild(rankings);
 
-    const playAgainBtn = document.createElement('button');
-    playAgainBtn.textContent = 'Play Again';
-    playAgainBtn.className = 'start-btn';
-    playAgainBtn.addEventListener('click', () => {
-      overlay.remove();
-      cancelAnimation();
-      this.showSetupScreen();
-    });
-    modal.appendChild(playAgainBtn);
+    drawPlayer(ctx, this.player);
+    drawHUD(ctx, this.score, this.distance, this.highScore);
+  }
 
-    overlay.appendChild(modal);
-    this.container.appendChild(overlay);
+  private gameOver(): void {
+    this.state = GameState.GameOver;
+    if (this.animFrameId !== null) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
+
+    const totalScore = this.score + Math.floor(this.distance);
+    if (totalScore > this.highScore) {
+      this.highScore = totalScore;
+      localStorage.setItem('parkour-highscore', String(this.highScore));
+    }
+
+    this.drawGameOverScreen();
+  }
+
+  private drawGameOverScreen(): void {
+    this.render();
+
+    const ctx = this.ctx;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
+
+    ctx.fillStyle = '#FF5252';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Game Over', CONFIG.canvasWidth / 2, CONFIG.canvasHeight / 2 - 60);
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '24px sans-serif';
+    const totalScore = this.score + Math.floor(this.distance);
+    ctx.fillText(`Score: ${totalScore}`, CONFIG.canvasWidth / 2, CONFIG.canvasHeight / 2 - 10);
+    ctx.fillText(`Distance: ${Math.floor(this.distance)}m`, CONFIG.canvasWidth / 2, CONFIG.canvasHeight / 2 + 25);
+
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText(`High Score: ${this.highScore}`, CONFIG.canvasWidth / 2, CONFIG.canvasHeight / 2 + 60);
+
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillStyle = '#E0E0E0';
+    ctx.fillText('Press SPACE or Click to Restart', CONFIG.canvasWidth / 2, CONFIG.canvasHeight / 2 + 100);
   }
 }

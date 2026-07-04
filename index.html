@@ -1,39 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ludo</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>Parkour Runner</title>
 </head>
 <body>
-  <h1>Ludo</h1>
-
-  <div id="hud">
-    <div class="turn-indicator">
-      <span id="player-dot" class="player-dot"></span>
-      <span id="player-name">Red</span>
-    </div>
-    <span id="game-message">Roll the dice to move</span>
-    <div id="dice-area">
-      <button id="dice-btn" type="button">Roll Dice</button>
-      <div id="dice-display" aria-live="polite">?</div>
-    </div>
-  </div>
-
-  <div id="board-container"></div>
-
-  <div id="winner-overlay" role="dialog" aria-modal="true" aria-label="Game over">
-    <div id="winner-modal">
-      <h2>
-        <span id="winner-dot" class="player-dot" style="display:inline-block;vertical-align:middle;margin-right:8px;width:24px;height:24px;"></span>
-        <span id="winner-title">Red Wins!</span>
-      </h2>
-      <p>Congratulations! All pieces reached home.</p>
-      <button id="restart-btn" type="button">Play Again</button>
-    </div>
-  </div>
-
-  <script type="module" src="app.js"></script>
+  <div id="app"></div>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

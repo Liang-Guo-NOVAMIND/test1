@@ -1,323 +1,274 @@
-import {
-  GameState,
-  Piece,
-  PiecePosition,
-  PlayerColor,
-  COLOR_HEX,
-  COLOR_HEX_DARK,
-  BoardCell,
-} from './types';
-import {
-  drawBoard,
-  getTrackCellPixel,
-  getFinishCellPixel,
-  getHomeCellPixel,
-  getCenterPixel,
-} from './board-layout';
-import { getMovablePieces } from './engine';
+import { ObstacleType, CollectibleType } from './types';
+import type { Player, Obstacle, Collectible } from './types';
+import { CONFIG } from './config';
 
-const PIECE_RADIUS = 14;
-
-export interface AnimationState {
-  pieceId: string;
-  path: BoardCell[];
-  currentStep: number;
-  progress: number;
-  onComplete: () => void;
+export function clearCanvas(ctx: CanvasRenderingContext2D): void {
+  ctx.clearRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
 }
 
-let currentAnimation: AnimationState | null = null;
-let animFrameId: number | null = null;
+export function drawBackground(ctx: CanvasRenderingContext2D, offset: number): void {
+  const grad = ctx.createLinearGradient(0, 0, 0, CONFIG.canvasHeight);
+  grad.addColorStop(0, '#87CEEB');
+  grad.addColorStop(0.6, '#E0F7FA');
+  grad.addColorStop(1, '#A5D6A7');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
 
-export function getPiecePixel(piece: Piece): BoardCell {
-  return positionToPixel(piece.color, piece.position, piece.index);
-}
+  ctx.fillStyle = '#66BB6A';
+  ctx.fillRect(0, CONFIG.groundY, CONFIG.canvasWidth, CONFIG.canvasHeight - CONFIG.groundY);
 
-export function positionToPixel(
-  color: PlayerColor,
-  pos: PiecePosition,
-  pieceIndex: number
-): BoardCell {
-  switch (pos.type) {
-    case 'home':
-      return getHomeCellPixel(color, pieceIndex);
-    case 'track':
-      return getTrackCellPixel(pos.cell);
-    case 'finish':
-      return getFinishCellPixel(color, pos.cell);
-    case 'won':
-      return getCenterPixel();
-  }
-}
-
-export function startAnimation(
-  pieceId: string,
-  pathPositions: PiecePosition[],
-  color: PlayerColor,
-  _pieceIndex: number,
-  onComplete: () => void
-): void {
-  cancelAnimation();
-
-  const path = pathPositions.map((pos) => positionToPixel(color, pos, 0));
-
-  if (path.length === 0) {
-    onComplete();
-    return;
-  }
-
-  currentAnimation = {
-    pieceId,
-    path,
-    currentStep: 0,
-    progress: 0,
-    onComplete,
-  };
-}
-
-export function cancelAnimation(): void {
-  if (animFrameId !== null) {
-    cancelAnimationFrame(animFrameId);
-    animFrameId = null;
-  }
-  currentAnimation = null;
-}
-
-export function isAnimating(): boolean {
-  return currentAnimation !== null;
-}
-
-function getAnimatingPiecePosition(): { id: string; pos: BoardCell } | null {
-  if (!currentAnimation) return null;
-
-  const anim = currentAnimation;
-  const step = anim.currentStep;
-
-  if (step >= anim.path.length) {
-    return { id: anim.pieceId, pos: anim.path[anim.path.length - 1]! };
-  }
-
-  const target = anim.path[step]!;
-
-  if (step === 0 && anim.progress === 0) {
-    return { id: anim.pieceId, pos: target };
-  }
-
-  const prev = step > 0 ? anim.path[step - 1]! : target;
-  const t = anim.progress;
-
-  return {
-    id: anim.pieceId,
-    pos: {
-      x: prev.x + (target.x - prev.x) * t,
-      y: prev.y + (target.y - prev.y) * t,
-    },
-  };
-}
-
-const STEP_DURATION = 120;
-
-export function renderLoop(
-  ctx: CanvasRenderingContext2D,
-  getState: () => GameState,
-  getHighlighted: () => Set<string>
-): void {
-  let lastTime = 0;
-
-  function frame(time: number): void {
-    const dt = time - lastTime;
-    lastTime = time;
-
-    if (currentAnimation) {
-      currentAnimation.progress += dt / STEP_DURATION;
-      if (currentAnimation.progress >= 1) {
-        currentAnimation.progress = 0;
-        currentAnimation.currentStep++;
-        if (currentAnimation.currentStep >= currentAnimation.path.length) {
-          const cb = currentAnimation.onComplete;
-          currentAnimation = null;
-          cb();
-        }
-      }
-    }
-
-    render(ctx, getState(), getHighlighted());
-    animFrameId = requestAnimationFrame(frame);
-  }
-
-  animFrameId = requestAnimationFrame(frame);
-}
-
-export function render(
-  ctx: CanvasRenderingContext2D,
-  state: GameState,
-  highlighted: Set<string>
-): void {
-  drawBoard(ctx);
-
-  const animPiece = getAnimatingPiecePosition();
-
-  const stackMap = new Map<string, Piece[]>();
-  for (const player of state.players) {
-    for (const piece of player.pieces) {
-      if (animPiece && piece.id === animPiece.id) continue;
-      const px = getPiecePixel(piece);
-      const key = `${Math.round(px.x)},${Math.round(px.y)}`;
-      const stack = stackMap.get(key) ?? [];
-      stack.push(piece);
-      stackMap.set(key, stack);
-    }
-  }
-
-  for (const [key, pieces] of stackMap) {
-    const [x, y] = key.split(',').map(Number) as [number, number];
-    drawPieceStack(ctx, pieces, { x, y }, highlighted);
-  }
-
-  if (animPiece) {
-    const piece = findPieceById(state, animPiece.id);
-    if (piece) {
-      drawSinglePiece(ctx, piece, animPiece.pos, false, true);
-    }
-  }
-
-  const movable = getMovablePieces(state);
-  if (movable.length > 0 && !currentAnimation) {
-    for (const p of movable) {
-      if (highlighted.has(p.id)) {
-        const px = getPiecePixel(p);
-        drawHighlightRing(ctx, px);
-      }
-    }
-  }
-}
-
-function findPieceById(state: GameState, id: string): Piece | null {
-  for (const player of state.players) {
-    for (const piece of player.pieces) {
-      if (piece.id === id) return piece;
-    }
-  }
-  return null;
-}
-
-function drawPieceStack(
-  ctx: CanvasRenderingContext2D,
-  pieces: Piece[],
-  pos: BoardCell,
-  highlighted: Set<string>
-): void {
-  if (pieces.length === 1) {
-    drawSinglePiece(ctx, pieces[0]!, pos, highlighted.has(pieces[0]!.id));
-    return;
-  }
-
-  const offsets = getStackOffsets(pieces.length);
-  for (let i = 0; i < pieces.length; i++) {
-    const p = pieces[i]!;
-    const off = offsets[i]!;
-    drawSinglePiece(
-      ctx,
-      p,
-      { x: pos.x + off.x, y: pos.y + off.y },
-      highlighted.has(p.id)
-    );
-  }
-}
-
-function getStackOffsets(
-  count: number
-): { x: number; y: number }[] {
-  const spread = 6;
-  if (count === 2)
-    return [
-      { x: -spread, y: 0 },
-      { x: spread, y: 0 },
-    ];
-  if (count === 3)
-    return [
-      { x: -spread, y: -spread / 2 },
-      { x: spread, y: -spread / 2 },
-      { x: 0, y: spread / 2 },
-    ];
-  return [
-    { x: -spread, y: -spread },
-    { x: spread, y: -spread },
-    { x: -spread, y: spread },
-    { x: spread, y: spread },
-  ];
-}
-
-function drawSinglePiece(
-  ctx: CanvasRenderingContext2D,
-  piece: Piece,
-  pos: BoardCell,
-  isHighlighted: boolean,
-  isAnimating = false
-): void {
-  ctx.save();
-
-  if (isHighlighted || isAnimating) {
-    ctx.shadowColor = COLOR_HEX[piece.color];
-    ctx.shadowBlur = 10;
-  }
-
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, PIECE_RADIUS, 0, Math.PI * 2);
-  ctx.fillStyle = COLOR_HEX[piece.color];
-  ctx.fill();
-  ctx.strokeStyle = COLOR_HEX_DARK[piece.color];
+  ctx.strokeStyle = '#4CAF50';
   ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, CONFIG.groundY);
+  ctx.lineTo(CONFIG.canvasWidth, CONFIG.groundY);
   ctx.stroke();
 
+  ctx.fillStyle = '#81C784';
+  const grassSpacing = 40;
+  const numGrass = Math.ceil(CONFIG.canvasWidth / grassSpacing) + 2;
+  const grassOffset = -(offset % grassSpacing);
+  for (let i = 0; i < numGrass; i++) {
+    const gx = grassOffset + i * grassSpacing;
+    ctx.beginPath();
+    ctx.moveTo(gx, CONFIG.groundY);
+    ctx.lineTo(gx + 5, CONFIG.groundY - 10);
+    ctx.lineTo(gx + 10, CONFIG.groundY);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.globalAlpha = 0.7;
+  const cloudOffset = -(offset * 0.3) % CONFIG.canvasWidth;
+  drawCloud(ctx, cloudOffset + 100, 60, 50);
+  drawCloud(ctx, cloudOffset + 350, 40, 40);
+  drawCloud(ctx, cloudOffset + 600, 80, 45);
+  drawCloud(ctx, cloudOffset + 850, 50, 35);
+  ctx.globalAlpha = 1;
+}
+
+function drawCloud(ctx: CanvasRenderingContext2D, x: number, y: number, size: number): void {
   ctx.beginPath();
-  ctx.arc(pos.x, pos.y, PIECE_RADIUS - 5, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.arc(x, y, size * 0.5, 0, Math.PI * 2);
+  ctx.arc(x + size * 0.4, y - size * 0.1, size * 0.4, 0, Math.PI * 2);
+  ctx.arc(x + size * 0.8, y, size * 0.45, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+export function drawPlayer(ctx: CanvasRenderingContext2D, player: Player): void {
+  ctx.save();
+
+  if (player.isSliding) {
+    ctx.fillStyle = '#FF5722';
+    const rx = player.x;
+    const ry = player.y;
+    const rw = player.width + 10;
+    const rh = player.height;
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, rw, rh, 8);
+    ctx.fill();
+
+    ctx.fillStyle = '#FFCCBC';
+    ctx.beginPath();
+    ctx.arc(rx + rw - 12, ry + rh / 2, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.arc(rx + rw - 9, ry + rh / 2 - 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = '#FF5722';
+    ctx.beginPath();
+    ctx.roundRect(player.x + 5, player.y + 20, 30, 30, 4);
+    ctx.fill();
+
+    ctx.fillStyle = '#FFCCBC';
+    ctx.beginPath();
+    ctx.arc(player.x + 20, player.y + 12, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.arc(player.x + 23, player.y + 10, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#5D4037';
+    ctx.fillRect(player.x + 10, player.y + 50, 8, 10);
+    ctx.fillRect(player.x + 22, player.y + 50, 8, 10);
+
+    ctx.fillStyle = '#FFCCBC';
+    const armAngle = player.isJumping ? -0.5 : Math.sin(Date.now() / 100) * 0.3;
+    ctx.save();
+    ctx.translate(player.x + 8, player.y + 25);
+    ctx.rotate(armAngle);
+    ctx.fillRect(-3, 0, 6, 18);
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(player.x + 32, player.y + 25);
+    ctx.rotate(-armAngle);
+    ctx.fillRect(-3, 0, 6, 18);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+export function drawObstacle(ctx: CanvasRenderingContext2D, obstacle: Obstacle): void {
+  ctx.save();
+
+  switch (obstacle.type) {
+    case ObstacleType.Low: {
+      ctx.fillStyle = '#795548';
+      ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+      ctx.fillStyle = '#5D4037';
+      ctx.fillRect(obstacle.x + 2, obstacle.y + 2, obstacle.width - 4, 6);
+      ctx.strokeStyle = '#4E342E';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+      break;
+    }
+    case ObstacleType.High: {
+      ctx.fillStyle = '#F44336';
+      ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+      ctx.fillStyle = '#D32F2F';
+      for (let i = 0; i < obstacle.width; i += 12) {
+        ctx.fillRect(obstacle.x + i, obstacle.y, 6, obstacle.height);
+      }
+      ctx.fillStyle = '#FFC107';
+      const triW = 8;
+      for (let i = 0; i < obstacle.width; i += triW * 2) {
+        ctx.beginPath();
+        ctx.moveTo(obstacle.x + i, obstacle.y + obstacle.height);
+        ctx.lineTo(obstacle.x + i + triW, obstacle.y + obstacle.height - 8);
+        ctx.lineTo(obstacle.x + i + triW * 2, obstacle.y + obstacle.height);
+        ctx.fill();
+      }
+      break;
+    }
+    case ObstacleType.Flying: {
+      ctx.fillStyle = '#9C27B0';
+      ctx.beginPath();
+      ctx.ellipse(
+        obstacle.x + obstacle.width / 2,
+        obstacle.y + obstacle.height / 2,
+        obstacle.width / 2,
+        obstacle.height / 2,
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+      ctx.fillStyle = '#CE93D8';
+      ctx.beginPath();
+      const wx = obstacle.x + obstacle.width / 2;
+      const wy = obstacle.y + obstacle.height / 2;
+      ctx.moveTo(wx - obstacle.width / 2 - 10, wy);
+      ctx.quadraticCurveTo(wx - obstacle.width / 4, wy - 15, wx, wy);
+      ctx.quadraticCurveTo(wx + obstacle.width / 4, wy - 15, wx + obstacle.width / 2 + 10, wy);
+      ctx.fill();
+      break;
+    }
+  }
+
+  ctx.restore();
+}
+
+export function drawCollectible(ctx: CanvasRenderingContext2D, collectible: Collectible): void {
+  ctx.save();
+
+  const pulse = 1 + Math.sin(Date.now() / 200) * 0.1;
+  const r = collectible.radius * pulse;
+
+  switch (collectible.type) {
+    case CollectibleType.Coin: {
+      ctx.fillStyle = '#FFD700';
+      ctx.strokeStyle = '#FFA000';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(collectible.x, collectible.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#FFA000';
+      ctx.font = `bold ${r}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('$', collectible.x, collectible.y + 1);
+      break;
+    }
+    case CollectibleType.Star: {
+      ctx.fillStyle = '#FFEB3B';
+      ctx.strokeStyle = '#F9A825';
+      ctx.lineWidth = 1.5;
+      drawStar(ctx, collectible.x, collectible.y, 5, r, r * 0.5);
+      ctx.fill();
+      ctx.stroke();
+      break;
+    }
+    case CollectibleType.Shield: {
+      ctx.fillStyle = '#2196F3';
+      ctx.strokeStyle = '#1565C0';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const sx = collectible.x;
+      const sy = collectible.y - r;
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(sx + r, sy, sx + r, sy + r);
+      ctx.quadraticCurveTo(sx + r, sy + r * 1.5, sx, sy + r * 2);
+      ctx.quadraticCurveTo(sx - r, sy + r * 1.5, sx - r, sy + r);
+      ctx.quadraticCurveTo(sx - r, sy, sx, sy);
+      ctx.fill();
+      ctx.stroke();
+      break;
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawStar(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  spikes: number,
+  outerRadius: number,
+  innerRadius: number
+): void {
+  ctx.beginPath();
+  let rot = (Math.PI / 2) * 3;
+  const step = Math.PI / spikes;
+  ctx.moveTo(cx, cy - outerRadius);
+  for (let i = 0; i < spikes; i++) {
+    ctx.lineTo(cx + Math.cos(rot) * outerRadius, cy + Math.sin(rot) * outerRadius);
+    rot += step;
+    ctx.lineTo(cx + Math.cos(rot) * innerRadius, cy + Math.sin(rot) * innerRadius);
+    rot += step;
+  }
+  ctx.lineTo(cx, cy - outerRadius);
+  ctx.closePath();
+}
+
+export function drawHUD(
+  ctx: CanvasRenderingContext2D,
+  score: number,
+  distance: number,
+  highScore: number
+): void {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(10, 10, 200, 70);
+  ctx.beginPath();
+  ctx.roundRect(10, 10, 200, 70, 8);
   ctx.fill();
 
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 11px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`${piece.index + 1}`, pos.x, pos.y + 1);
-
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Score: ${score}`, 20, 32);
+  ctx.fillText(`Distance: ${Math.floor(distance)}m`, 20, 52);
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText(`Best: ${highScore}`, 20, 70);
   ctx.restore();
-}
-
-function drawHighlightRing(
-  ctx: CanvasRenderingContext2D,
-  pos: BoardCell
-): void {
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, PIECE_RADIUS + 4, 0, Math.PI * 2);
-  ctx.strokeStyle = '#FFD600';
-  ctx.lineWidth = 3;
-  ctx.setLineDash([4, 4]);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-}
-
-export function getClickedPiece(
-  state: GameState,
-  canvasX: number,
-  canvasY: number
-): Piece | null {
-  const movable = getMovablePieces(state);
-  let closest: Piece | null = null;
-  let closestDist = Infinity;
-
-  for (const piece of movable) {
-    const px = getPiecePixel(piece);
-    const dx = canvasX - px.x;
-    const dy = canvasY - px.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist <= PIECE_RADIUS + 6 && dist < closestDist) {
-      closest = piece;
-      closestDist = dist;
-    }
-  }
-
-  return closest;
 }
