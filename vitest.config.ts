@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     coverage: {
       provider: 'v8',
-      include: ['src/game-engine.ts'],
+      include: ['src/game-engine.ts', 'src/gomoku-engine.ts'],
       exclude: ['src/**/*.test.ts'],
       thresholds: {
         branches: 80,
